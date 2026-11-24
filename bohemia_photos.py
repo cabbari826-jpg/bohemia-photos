@@ -138,13 +138,16 @@ def find_columns(rows):
         for col, v in enumerate(row, 1):
             if v not in (None, ''):
                 heads.setdefault(str(v).strip().upper(), col)  # первая колонка с таким заголовком
-        code = heads.get('CODE')
+        code_cols = [v for k, v in heads.items() if k.startswith('CODE')]
+        code = heads.get('CODE') or (code_cols[0] if code_cols else None)
         desc = next((v for k, v in heads.items() if k.startswith('DESCRIPTION')), None)
         if code and desc:
             coll = next((v for k, v in heads.items() if k.startswith('COLLECTION')), None)
-            return i, code, desc, coll
+            # запасные колонки кода: CODE SHORT, CODE W/O BN, CODE W/O ZERO и т.п.
+            alts = [c for c in code_cols if c != code]
+            return i, code, desc, coll, alts
     # запасной вариант: раскладка SBS 2026
-    return 1, 6, 11, 3
+    return 1, 6, 11, 3, [7, 8]
 
 
 class PriceError(RuntimeError):
@@ -401,7 +404,7 @@ def run(price, folder, out, log=print, progress=None, existing_dir=None):
 
     log('Читаю прайс...')
     price_rows, had_photo = read_price(price)
-    head, c_code, c_desc, c_coll = find_columns(price_rows)
+    head, c_code, c_desc, c_coll, c_alts = find_columns(price_rows)
 
     cols = ['Строка прайса', 'Коллекция', 'Код', 'Короткий код', 'Описание (прайс)',
             'Фото в прайсе', 'Статус', 'Подпись в каталоге', 'Проверка описания',
@@ -418,9 +421,17 @@ def run(price, folder, out, log=print, progress=None, existing_dir=None):
     for rownum, row in enumerate(all_rows, head + 1):
         if progress and rownum % 20 == 0:
             progress(0.5 + 0.45 * (rownum - head) / max(len(all_rows), 1))
-        code = clean_code(row[c_code - 1]) if len(row) >= c_code else ''
-        parts = code.split('/')
-        if len(parts) < 5 or not re.match(r'^[0-9A-Z]{3}$', parts[0]):
+        # основной код из CODE; если там пусто или мусор — из CODE W/O BN / CODE W/O ZERO и т.п.
+        code, parts = '', []
+        for col in [c_code] + c_alts:
+            cand = clean_code(row[col - 1]) if len(row) >= col else ''
+            p = cand.split('/')
+            if len(p) >= 5 and re.match(r'^[0-9A-Z]{3}$', p[0]) and p[4]:
+                if not code or len(p[4].split('-')[0]) > len(parts[4].split('-')[0]):
+                    code, parts = cand, p
+                if len(p[4].split('-')[0]) >= 3:
+                    break
+        if not code:
             continue
         desc = str(row[c_desc - 1] or '').strip() if len(row) >= c_desc else ''
         coll = str(row[c_coll - 1] or '').strip() if c_coll and len(row) >= c_coll else ''
