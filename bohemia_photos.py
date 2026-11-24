@@ -109,6 +109,20 @@ def build_index(folder, log=print, progress=None):
 
 
 # ---------------------------------------------------------------- прайс
+_CYR_LOOKALIKE = str.maketrans('АВСЕНКМОРТХ', 'ABCEHKMOPTX')
+_DASHES = str.maketrans({'\u2010': '-', '\u2011': '-', '\u2012': '-', '\u2013': '-', '\u2014': '-',
+                         '\u2015': '-', '\u2212': '-', '\\': '/', '\u2044': '/', '\u2215': '/'})
+
+
+def clean_code(raw):
+    """Чистим код из прайса: пробелы (в т.ч. неразрывные) где угодно, длинные тире, кириллица-двойники."""
+    if raw is None:
+        return ''
+    s = str(raw).translate(_DASHES)
+    s = re.sub(r'[\s\u00a0\u200b\ufeff]+', '', s)
+    return s.upper().translate(_CYR_LOOKALIKE)
+
+
 def short_code(full):
     """91L/1SI97/0/00000/630-660 -> 1SI97/00000/630"""
     parts = str(full).strip().split('/')
@@ -321,9 +335,6 @@ def write_report(path, cols, widths, report, thumbs):
 IMG_EXT = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff', '.gif')
 
 
-_CYR_LOOKALIKE = str.maketrans('АВСЕНКМОРТХ', 'ABCEHKMOPTX')
-
-
 def code_key(text):
     """Ключ для сравнения без учёта разделителей и регистра: 91L/1SI97/0/00000/630-660 -> 91L1SI97000000630660"""
     t = str(text).upper().translate(_CYR_LOOKALIKE)  # кириллица, похожая на латиницу
@@ -407,16 +418,46 @@ def run(price, folder, out, log=print, progress=None, existing_dir=None):
     for rownum, row in enumerate(all_rows, head + 1):
         if progress and rownum % 20 == 0:
             progress(0.5 + 0.45 * (rownum - head) / max(len(all_rows), 1))
-        code = row[c_code - 1] if len(row) >= c_code else None
-        if not code or str(code).count('/') < 4 or not re.match(r'^[0-9A-Z]{3}/', str(code).strip()):
+        code = clean_code(row[c_code - 1]) if len(row) >= c_code else ''
+        parts = code.split('/')
+        if len(parts) < 5 or not re.match(r'^[0-9A-Z]{3}$', parts[0]):
             continue
-        code = str(code).strip()
         desc = str(row[c_desc - 1] or '').strip() if len(row) >= c_desc else ''
         coll = str(row[c_coll - 1] or '').strip() if c_coll and len(row) >= c_coll else ''
-        sc = short_code(code)
-        hits = index.get(sc, [])
+        vol = parts[4].split('-')[0]
+        if len(vol) >= 3:
+            cand_codes = [f'{parts[1]}/{parts[3]}/{vol[:3]}']
+        else:
+            # укороченный код: 91L/1SJ60/0/00000/38 -> все 1SJ60/00000/38x из каталогов
+            prefix = f'{parts[1]}/{parts[3]}/{vol}'
+            cand_codes = [c for c in index if c.startswith(prefix)]
+        hits = [it for c in cand_codes for it in index.get(c, [])]
+        best = verdict = None
+        if hits:
+            scored = []
+            for it in hits:
+                v, score = describe_match(desc, it['label'], it.get('details', ''), it['code'])
+                exact = bool(tokens(desc)[1] & tokens(it['label'] + ' ' + it.get('details', ''))[1])
+                scored.append((-score, not exact, it['shared'] > 1, catalog_rank(it['catalog']), it, v))
+            scored.sort(key=lambda x: x[:4])
+            _, _, shared, _, best, verdict = scored[0]
+            if shared and verdict == 'совпадает':
+                verdict = 'проверить'
+            # несколько разных артикулов с одинаковой оценкой (бывает у кодов из 2 цифр)
+            rivals = {x[4]['code'] for x in scored if x[:2] == scored[0][:2]}
+            if len(rivals) > 1 and verdict == 'совпадает':
+                verdict = 'проверить'
+        sc = best['code'] if best else (cand_codes[0] if len(cand_codes) == 1 else f'{parts[1]}/{parts[3]}/{vol}')
         line = [rownum, coll, code, sc, desc, 'да' if rownum in had_photo else '']
-        have = find_existing(code, existing, keys_sorted)
+
+        # уже имеющееся фото
+        if len(vol) >= 3:
+            have = find_existing(code, existing, keys_sorted)
+        else:
+            have = existing.get(code_key(code)) if existing else None
+            if not have and best:
+                full = '/'.join(parts[:4] + [best['code'].split('/')[-1]])
+                have = find_existing(full, existing, keys_sorted)
         if have:
             key = 'existing:' + have
             if key not in thumbs:
@@ -429,18 +470,10 @@ def run(price, folder, out, log=print, progress=None, existing_dir=None):
                 rel = os.path.relpath(have, existing_dir)
                 report.append((line + ['есть в папке', '', '', '', '', rel, ''], 6, fills['есть в папке'], key))
                 continue
-        if not hits:
+        if not best:
             stats['нет в каталогах'] += 1
             report.append((line + ['нет в каталогах', '', '', '', '', '', ''], 6, fills['нет в каталогах'], None))
             continue
-        scored = []
-        for it in hits:
-            verdict, score = describe_match(desc, it['label'], it.get('details', ''), it['code'])
-            scored.append((-score, it['shared'] > 1, catalog_rank(it['catalog']), it, verdict))
-        scored.sort(key=lambda x: x[:3])
-        _, shared, _, best, verdict = scored[0]
-        if shared and verdict == 'совпадает':
-            verdict = 'проверить'
         stats[verdict] += 1
         fname = safe_name(code) + '.jpg'
         if fname not in saved:
