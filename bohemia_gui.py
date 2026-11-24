@@ -17,7 +17,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry('720x520')
+        self.geometry('760x560')
         self.minsize(600, 420)
         self.q = queue.Queue()
         self.worker = None
@@ -25,6 +25,7 @@ class App(tk.Tk):
         self.price = tk.StringVar()
         self.catalogs = tk.StringVar()
         self.out = tk.StringVar()
+        self.existing = tk.StringVar()
 
         pad = dict(padx=10, pady=6)
         frm = ttk.Frame(self)
@@ -33,7 +34,8 @@ class App(tk.Tk):
 
         self._row(frm, 0, 'Прайс-лист (.xlsx, .xls):', self.price, self.pick_price)
         self._row(frm, 1, 'Папка с каталогами (PDF):', self.catalogs, self.pick_catalogs)
-        self._row(frm, 2, 'Куда сохранить результат:', self.out, self.pick_out)
+        self._row(frm, 2, 'Имеющиеся фото (необязательно):', self.existing, self.pick_existing)
+        self._row(frm, 3, 'Куда сохранить результат:', self.out, self.pick_out)
 
         bar = ttk.Frame(self)
         bar.pack(fill='x', **pad)
@@ -72,6 +74,11 @@ class App(tk.Tk):
         if p:
             self.catalogs.set(p)
 
+    def pick_existing(self):
+        p = filedialog.askdirectory(title='Папка с уже имеющимися фото')
+        if p:
+            self.existing.set(p)
+
     def pick_out(self):
         p = filedialog.askdirectory(title='Папка для результата')
         if p:
@@ -99,19 +106,24 @@ class App(tk.Tk):
         if not out:
             messagebox.showwarning(APP_TITLE, 'Выберите папку для результата.')
             return
+        existing = self.existing.get().strip() or None
+        if existing and not os.path.isdir(existing):
+            messagebox.showwarning(APP_TITLE, 'Папка с имеющимися фото не найдена.')
+            return
         self.btn.configure(state='disabled')
         self.open_btn.configure(state='disabled')
         self.pb['value'] = 0
         self.status.configure(text='Работаю…')
         self._clear_log()
-        self.worker = threading.Thread(target=self._work, args=(price, cats, out), daemon=True)
+        self.worker = threading.Thread(target=self._work, args=(price, cats, out, existing), daemon=True)
         self.worker.start()
 
-    def _work(self, price, cats, out):
+    def _work(self, price, cats, out, existing):
         try:
             stats, saved = core.run(price, cats, out,
                                     log=lambda m: self.q.put(('log', m)),
-                                    progress=lambda v: self.q.put(('prog', v)))
+                                    progress=lambda v: self.q.put(('prog', v)),
+                                    existing_dir=existing)
             self.q.put(('done', (stats, saved, out)))
         except core.PriceError as e:
             self.q.put(('log', f'\nОшибка: {e}'))
@@ -136,7 +148,9 @@ class App(tk.Tk):
                     self.open_btn.configure(state='normal')
                     found = stats.get('совпадает', 0) + stats.get('проверить', 0)
                     messagebox.showinfo(APP_TITLE,
-                                        f'Готово.\n\nНайдено фото: {found} из {sum(stats.values())}\n'
+                                        f'Готово. Артикулов: {sum(stats.values())}\n\n'
+                                        f'Уже есть в папке: {stats.get("есть в папке", 0)}\n'
+                                        f'Новых фото из каталогов: {found}\n'
                                         f'Проверить вручную: {stats.get("проверить", 0)}\n'
                                         f'Нет в каталогах: {stats.get("нет в каталогах", 0)}\n\n'
                                         f'Отчёт: {os.path.join(out, "report.xlsx")}')

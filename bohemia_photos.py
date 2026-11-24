@@ -3,7 +3,7 @@
 Bohemia: фото товаров из PDF-каталогов по кодам из прайс-листа.
 
 Запуск:
-    python bohemia_photos.py ПРАЙС.xlsx ПАПКА_С_КАТАЛОГАМИ [ПАПКА_РЕЗУЛЬТАТА]
+    python bohemia_photos.py ПРАЙС.xlsx ПАПКА_С_КАТАЛОГАМИ [ПАПКА_РЕЗУЛЬТАТА] [ПАПКА_ИМЕЮЩИХСЯ_ФОТО]
 
 Что делает:
   1. Читает все PDF в папке каталогов, находит короткие коды вида 1SI97/00000/630
@@ -317,9 +317,63 @@ def write_report(path, cols, widths, report, thumbs):
     wb.close()
 
 
+# ---------------------------------------------------------------- имеющиеся фото
+IMG_EXT = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff', '.gif')
+
+
+_CYR_LOOKALIKE = str.maketrans('АВСЕНКМОРТХ', 'ABCEHKMOPTX')
+
+
+def code_key(text):
+    """Ключ для сравнения без учёта разделителей и регистра: 91L/1SI97/0/00000/630-660 -> 91L1SI97000000630660"""
+    t = str(text).upper().translate(_CYR_LOOKALIKE)  # кириллица, похожая на латиницу
+    return re.sub(r'[^0-9A-Z]', '', t)  # все разделители (/ - – — _ пробел . и т.д.) отбрасываются
+
+
+def index_existing(folder, log=print):
+    """Файлы фото в папке (с подпапками): ключ имени -> путь."""
+    found = {}
+    for root, _, files in os.walk(folder):
+        for f in files:
+            stem, ext = os.path.splitext(f)
+            if ext.lower() in IMG_EXT and not f.startswith('~$'):
+                found.setdefault(code_key(stem), os.path.join(root, f))
+    log(f'  фото в папке: {len(found)}')
+    return found
+
+
+def find_existing(code, existing, keys_sorted):
+    """Ищем фото для полного кода: точное совпадение, потом имя с припиской (…_1, «копия»),
+    потом код без упаковочного хвоста (630-660 -> 630)."""
+    if not existing:
+        return None
+    k = code_key(code)
+    if k in existing:
+        return existing[k]
+    import bisect
+    i = bisect.bisect_left(keys_sorted, k)
+    if i < len(keys_sorted) and keys_sorted[i].startswith(k):
+        return existing[keys_sorted[i]]
+    parts = str(code).strip().split('/')
+    if len(parts) >= 5:
+        base = '/'.join(parts[:4] + [parts[4].split('-')[0]])
+        kb = code_key(base)
+        if kb in existing:
+            return existing[kb]
+    return None
+
+
+def thumb_of(path):
+    img = Image.open(path)
+    img = img.convert('RGB')
+    img.thumbnail((200, 200))
+    return img
+
+
 # ---------------------------------------------------------------- main
-def run(price, folder, out, log=print, progress=None):
-    """Основная работа. log(str) — вывод сообщений, progress(0..1) — прогресс."""
+def run(price, folder, out, log=print, progress=None, existing_dir=None):
+    """Основная работа. log(str) — вывод сообщений, progress(0..1) — прогресс.
+    existing_dir — папка с уже имеющимися фото (необязательно): их берём в отчёт, из каталогов не режем."""
     os.makedirs(os.path.join(out, 'photos'), exist_ok=True)
 
     log('Читаю каталоги...')
@@ -327,6 +381,12 @@ def run(price, folder, out, log=print, progress=None):
     if not npdf:
         raise RuntimeError('В папке каталогов нет PDF-файлов')
     log(f'  найдено кодов в каталогах: {len(index)} (файлов: {npdf})')
+
+    existing, keys_sorted = {}, []
+    if existing_dir:
+        log('Читаю папку с имеющимися фото...')
+        existing = index_existing(existing_dir, log)
+        keys_sorted = sorted(existing)
 
     log('Читаю прайс...')
     price_rows, had_photo = read_price(price)
@@ -336,11 +396,11 @@ def run(price, folder, out, log=print, progress=None):
             'Фото в прайсе', 'Статус', 'Подпись в каталоге', 'Проверка описания',
             'Каталог', 'Стр.', 'Файл фото', 'Фото']
     widths = [8, 22, 30, 18, 28, 9, 16, 30, 16, 34, 6, 34, 18]
-    fills = {'совпадает': '#C6EFCE', 'проверить': '#FFEB9C', 'не совпадает': '#FFC7CE',
+    fills = {'есть в папке': '#DDEBF7', 'совпадает': '#C6EFCE', 'проверить': '#FFEB9C', 'не совпадает': '#FFC7CE',
              'нет в каталогах': '#FFC7CE'}
     report = []  # (значения, статус-колонка, цвет, имя фото)
 
-    docs, saved = {}, {}
+    docs, saved, thumbs = {}, {}, {}
     stats = collections.Counter()
     all_rows = price_rows[head:]
     log('Вырезаю фото...')
@@ -356,6 +416,19 @@ def run(price, folder, out, log=print, progress=None):
         sc = short_code(code)
         hits = index.get(sc, [])
         line = [rownum, coll, code, sc, desc, 'да' if rownum in had_photo else '']
+        have = find_existing(code, existing, keys_sorted)
+        if have:
+            key = 'existing:' + have
+            if key not in thumbs:
+                try:
+                    thumbs[key] = thumb_of(have)
+                except Exception:
+                    have = None
+            if have:
+                stats['есть в папке'] += 1
+                rel = os.path.relpath(have, existing_dir)
+                report.append((line + ['есть в папке', '', '', '', '', rel, ''], 6, fills['есть в папке'], key))
+                continue
         if not hits:
             stats['нет в каталогах'] += 1
             report.append((line + ['нет в каталогах', '', '', '', '', '', ''], 6, fills['нет в каталогах'], None))
@@ -375,14 +448,15 @@ def run(price, folder, out, log=print, progress=None):
             img.save(os.path.join(out, 'photos', fname), quality=92)
             th = img.copy()
             th.thumbnail((200, 200))
-            saved[fname] = th
+            saved[fname] = True
+            thumbs[fname] = th
         report.append((line + ['найдено', (best['label'] + ' / ' + best['details']).strip(' /'), verdict,
                                best['catalog'], best['page'], fname, ''], 8, fills[verdict], fname))
     if not stats:
         raise PriceError('В прайсе не найдено ни одного кода вида 91L/1SI97/0/00000/630-660. '
                          'Проверьте, что выбран правильный файл и что в нём есть колонки CODE и DESCRIPTION.')
     log('Сохраняю отчёт...')
-    write_report(os.path.join(out, 'report.xlsx'), cols, widths, report, saved)
+    write_report(os.path.join(out, 'report.xlsx'), cols, widths, report, thumbs)
     if progress:
         progress(1.0)
 
@@ -401,7 +475,8 @@ def main():
         sys.exit(1)
     price, folder = sys.argv[1], sys.argv[2]
     out = sys.argv[3] if len(sys.argv) > 3 else 'bohemia_result'
-    run(price, folder, out)
+    existing = sys.argv[4] if len(sys.argv) > 4 else None
+    run(price, folder, out, existing_dir=existing)
 
 
 if __name__ == '__main__':
