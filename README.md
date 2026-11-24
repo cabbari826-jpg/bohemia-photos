@@ -12,5 +12,5 @@
 дважды щёлкнуть `build_exe.bat`. Готовый файл: `dist\BohemiaPhotos.exe`.
 
 ## Запуск без сборки
-    pip install pymupdf openpyxl pillow xlrd msoffcrypto-tool
+    pip install pymupdf openpyxl pillow xlrd msoffcrypto-tool xlsxwriter
     python bohemia_gui.py

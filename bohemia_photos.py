@@ -14,7 +14,7 @@ Bohemia: фото товаров из PDF-каталогов по кодам и�
   4. Сохраняет фото: <результат>/photos/<полный код, / заменён на ->.jpg
      и отчёт <результат>/report.xlsx с миниатюрами и статусами.
 
-Нужно: pip install pymupdf openpyxl pillow xlrd msoffcrypto-tool
+Нужно: pip install pymupdf openpyxl pillow xlrd msoffcrypto-tool xlsxwriter
 """
 import io
 import os
@@ -25,8 +25,7 @@ import collections
 
 import pymupdf
 import openpyxl
-from openpyxl.drawing.image import Image as XLImage
-from openpyxl.styles import PatternFill, Font, Alignment
+import xlsxwriter
 from PIL import Image
 
 CODE_RE = re.compile(r'^([0-9A-Z]{5})/([0-9A-Z]{5})/([0-9A-Z]{3})$')
@@ -285,6 +284,39 @@ def safe_name(code):
     return re.sub(r'[\\:*?"<>|\s]+', '_', name)
 
 
+# ---------------------------------------------------------------- отчёт
+def write_report(path, cols, widths, report, thumbs):
+    """Отчёт с фото, вставленными в ячейки (как «Поместить в ячейку» в Excel):
+    фото двигаются, сортируются и фильтруются вместе со строкой."""
+    wb = xlsxwriter.Workbook(path)
+    ws = wb.add_worksheet('Отчёт')
+    base = dict(valign='vcenter', text_wrap=True)
+    hdr = wb.add_format(dict(base, bold=True, bg_color='#F2F2F2', border=1))
+    cell = wb.add_format(base)
+    colored = {}
+    for i, w in enumerate(widths):
+        ws.set_column(i, i, w)
+    ws.write_row(0, 0, cols, hdr)
+    photo_col = len(cols) - 1
+    png = {}
+    for r, (values, status_col, color, fname) in enumerate(report, 1):
+        for c, v in enumerate(values):
+            fmt = cell
+            if c == status_col:
+                fmt = colored.get(color) or colored.setdefault(color, wb.add_format(dict(base, bg_color=color)))
+            ws.write(r, c, v, fmt)
+        if fname:
+            if fname not in png:
+                buf = io.BytesIO()
+                thumbs[fname].save(buf, 'JPEG', quality=85)
+                png[fname] = buf.getvalue()
+            ws.set_row(r, 90)
+            ws.embed_image(r, photo_col, fname, {'image_data': io.BytesIO(png[fname]), 'description': fname})
+    ws.freeze_panes(1, 0)
+    ws.autofilter(0, 0, len(report), len(cols) - 1)
+    wb.close()
+
+
 # ---------------------------------------------------------------- main
 def run(price, folder, out, log=print, progress=None):
     """Основная работа. log(str) — вывод сообщений, progress(0..1) — прогресс."""
@@ -300,20 +332,13 @@ def run(price, folder, out, log=print, progress=None):
     price_rows, had_photo = read_price(price)
     head, c_code, c_desc, c_coll = find_columns(price_rows)
 
-    rep = openpyxl.Workbook()
-    rs = rep.active
-    rs.title = 'Отчёт'
     cols = ['Строка прайса', 'Коллекция', 'Код', 'Короткий код', 'Описание (прайс)',
             'Фото в прайсе', 'Статус', 'Подпись в каталоге', 'Проверка описания',
             'Каталог', 'Стр.', 'Файл фото', 'Фото']
-    rs.append(cols)
-    for c in rs[1]:
-        c.font = Font(bold=True)
-    widths = [8, 22, 30, 18, 28, 9, 16, 30, 16, 34, 6, 34, 16]
-    for i, w in enumerate(widths):
-        rs.column_dimensions[openpyxl.utils.get_column_letter(i + 1)].width = w
-    fills = {'совпадает': 'C6EFCE', 'проверить': 'FFEB9C', 'не совпадает': 'FFC7CE',
-             'нет в каталогах': 'FFC7CE'}
+    widths = [8, 22, 30, 18, 28, 9, 16, 30, 16, 34, 6, 34, 18]
+    fills = {'совпадает': '#C6EFCE', 'проверить': '#FFEB9C', 'не совпадает': '#FFC7CE',
+             'нет в каталогах': '#FFC7CE'}
+    report = []  # (значения, статус-колонка, цвет, имя фото)
 
     docs, saved = {}, {}
     stats = collections.Counter()
@@ -333,8 +358,7 @@ def run(price, folder, out, log=print, progress=None):
         line = [rownum, coll, code, sc, desc, 'да' if rownum in had_photo else '']
         if not hits:
             stats['нет в каталогах'] += 1
-            rs.append(line + ['нет в каталогах', '', '', '', '', '', ''])
-            rs.cell(rs.max_row, 7).fill = PatternFill('solid', fgColor=fills['нет в каталогах'])
+            report.append((line + ['нет в каталогах', '', '', '', '', '', ''], 6, fills['нет в каталогах'], None))
             continue
         scored = []
         for it in hits:
@@ -350,27 +374,15 @@ def run(price, folder, out, log=print, progress=None):
             img = crop(best, docs)
             img.save(os.path.join(out, 'photos', fname), quality=92)
             th = img.copy()
-            th.thumbnail((110, 110))
+            th.thumbnail((200, 200))
             saved[fname] = th
-        rs.append(line + ['найдено', (best['label'] + ' / ' + best['details']).strip(' /'), verdict, best['catalog'], best['page'], fname, ''])
-        r = rs.max_row
-        rs.cell(r, 9).fill = PatternFill('solid', fgColor=fills[verdict])
-        buf = io.BytesIO()
-        saved[fname].save(buf, 'PNG')
-        buf.seek(0)
-        xi = XLImage(buf)
-        rs.add_image(xi, f'M{r}')
-        rs.row_dimensions[r].height = 86
-    for row in rs.iter_rows(min_row=2):
-        for c in row:
-            c.alignment = Alignment(vertical='center', wrap_text=True)
-    rs.freeze_panes = 'A2'
-    rs.auto_filter.ref = rs.dimensions
+        report.append((line + ['найдено', (best['label'] + ' / ' + best['details']).strip(' /'), verdict,
+                               best['catalog'], best['page'], fname, ''], 8, fills[verdict], fname))
     if not stats:
         raise PriceError('В прайсе не найдено ни одного кода вида 91L/1SI97/0/00000/630-660. '
                          'Проверьте, что выбран правильный файл и что в нём есть колонки CODE и DESCRIPTION.')
     log('Сохраняю отчёт...')
-    rep.save(os.path.join(out, 'report.xlsx'))
+    write_report(os.path.join(out, 'report.xlsx'), cols, widths, report, saved)
     if progress:
         progress(1.0)
 
