@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -24,5 +26,13 @@ jobs:
         with:
           name: BohemiaPhotos
           path: |
+            dist/BohemiaPhotos.exe
+            dist/BohemiaPhotos-Setup.exe
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Bohemia Photos 1.0.${{ github.run_number }}
+          files: |
             dist/BohemiaPhotos.exe
             dist/BohemiaPhotos-Setup.exe
