@@ -2,7 +2,6 @@ name: Build Windows app
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: write
@@ -11,6 +10,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Version
+        shell: pwsh
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          "APP_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -22,7 +26,6 @@ jobs:
           if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) { choco install innosetup -y --no-progress }
           $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
           if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
-          $env:APP_VERSION = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "1.0.${env:GITHUB_RUN_NUMBER}" }
           & $iscc installer.iss
       - uses: actions/upload-artifact@v4
         with:
@@ -30,13 +33,15 @@ jobs:
           path: |
             dist/BohemiaPhotos.exe
             dist/BohemiaPhotos-Setup.exe
+      # Релиз = версия из файла VERSION. Повторная сборка той же версии обновляет файлы релиза.
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v1.0.{0}', github.run_number) }}
-          name: Bohemia Photos ${{ github.ref_type == 'tag' && github.ref_name || format('1.0.{0}', github.run_number) }}
-          body_path: ${{ github.ref_type == 'tag' && 'RELEASE_NOTES.md' || '' }}
-          prerelease: ${{ github.ref_type != 'tag' }}
+          tag_name: v${{ env.APP_VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: Bohemia Photos ${{ env.APP_VERSION }}
+          body_path: RELEASE_NOTES.md
+          make_latest: true
           files: |
             dist/BohemiaPhotos.exe
             dist/BohemiaPhotos-Setup.exe
