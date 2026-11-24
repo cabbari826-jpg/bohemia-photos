@@ -14,7 +14,7 @@ Bohemia: фото товаров из PDF-каталогов по кодам и�
   4. Сохраняет фото: <результат>/photos/<полный код, / заменён на ->.jpg
      и отчёт <результат>/report.xlsx с миниатюрами и статусами.
 
-Нужно: pip install pymupdf openpyxl pillow
+Нужно: pip install pymupdf openpyxl pillow xlrd msoffcrypto-tool
 """
 import io
 import os
@@ -118,19 +118,101 @@ def short_code(full):
     return f'{parts[1]}/{parts[3]}/{parts[4][:3]}'
 
 
-def find_columns(ws):
-    for row in ws.iter_rows(min_row=1, max_row=20):
+def find_columns(rows):
+    """rows: список строк (кортежей) прайса, начиная с 1-й строки листа."""
+    for i, row in enumerate(rows[:20], 1):
         heads = {}
-        for c in row:
-            if c.value:
-                heads.setdefault(str(c.value).strip().upper(), c.column)  # первая колонка с таким заголовком
+        for col, v in enumerate(row, 1):
+            if v not in (None, ''):
+                heads.setdefault(str(v).strip().upper(), col)  # первая колонка с таким заголовком
         code = heads.get('CODE')
         desc = next((v for k, v in heads.items() if k.startswith('DESCRIPTION')), None)
         if code and desc:
             coll = next((v for k, v in heads.items() if k.startswith('COLLECTION')), None)
-            return row[0].row, code, desc, coll
+            return i, code, desc, coll
     # запасной вариант: раскладка SBS 2026
     return 1, 6, 11, 3
+
+
+class PriceError(RuntimeError):
+    """Понятная пользователю ошибка чтения прайса."""
+
+
+def _xlsx_rows(src):
+    try:
+        wb = openpyxl.load_workbook(src, read_only=True, data_only=True)
+    except Exception as e:
+        raise PriceError('Не удалось открыть прайс как .xlsx. Откройте его в Excel и '
+                         'сохраните как «Книга Excel (*.xlsx)».') from e
+    return [tuple(r) for r in wb.worksheets[0].iter_rows(values_only=True)]
+
+
+def read_price(path):
+    """Возвращает (строки, номера строк с фото). Понимает .xlsx, .xls, защищённый .xlsx без пароля, .csv."""
+    name = os.path.basename(path)
+    if name.startswith('~$'):
+        raise PriceError(f'«{name}» — временный файл Excel. Выберите сам прайс (без ~$ в начале имени).')
+    try:
+        with open(path, 'rb') as f:
+            head = f.read(8)
+    except PermissionError as e:
+        raise PriceError('Нет доступа к файлу прайса. Закройте его в Excel и попробуйте снова.') from e
+    if head.startswith(b'PK'):
+        if name.lower().endswith('.xlsb'):
+            raise PriceError('Формат .xlsb не поддерживается. Сохраните прайс как .xlsx.')
+        rows = _xlsx_rows(path)
+        try:
+            had = photo_rows(path)
+        except Exception:
+            had = set()
+        return rows, had
+    if head.startswith(b'\xd0\xcf\x11\xe0'):
+        # контейнер OLE: либо старый .xls, либо зашифрованный .xlsx
+        import msoffcrypto
+        with open(path, 'rb') as f:
+            office = msoffcrypto.OfficeFile(f)
+            encrypted = office.is_encrypted()
+            if encrypted:
+                buf = io.BytesIO()
+                try:
+                    office.load_key(password='VelvetSweatshop')  # пароль Excel «только для чтения»
+                    office.decrypt(buf)
+                except Exception as e:
+                    raise PriceError('Прайс защищён паролем. Откройте его в Excel, снимите пароль '
+                                     '(Файл → Сведения → Защита книги) и сохраните как .xlsx.') from e
+                buf.seek(0)
+                rows = _xlsx_rows(buf)
+                buf.seek(0)
+                try:
+                    had = photo_rows(buf)
+                except Exception:
+                    had = set()
+                return rows, had
+        import xlrd
+        try:
+            book = xlrd.open_workbook(path)
+        except Exception as e:
+            raise PriceError('Не удалось прочитать старый формат .xls. Сохраните прайс как .xlsx.') from e
+        sh = book.sheet_by_index(0)
+        rows = [tuple(sh.row_values(i)) for i in range(sh.nrows)]
+        return rows, set()  # фото в .xls не определяются
+    # текстовый файл: CSV
+    import csv
+    for enc in ('utf-8-sig', 'cp1251'):
+        try:
+            with open(path, encoding=enc, newline='') as f:
+                text = f.read()
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise PriceError('Не удалось распознать формат прайса. Сохраните его как .xlsx.')
+    try:
+        dialect = csv.Sniffer().sniff(text[:5000], delimiters=';,\t')
+    except csv.Error:
+        raise PriceError('Не удалось распознать формат прайса. Сохраните его как .xlsx.')
+    rows = [tuple(r) for r in csv.reader(io.StringIO(text), dialect)]
+    return rows, set()
 
 
 def photo_rows(path):
@@ -215,10 +297,8 @@ def run(price, folder, out, log=print, progress=None):
     log(f'  найдено кодов в каталогах: {len(index)} (файлов: {npdf})')
 
     log('Читаю прайс...')
-    wb = openpyxl.load_workbook(price, read_only=True)
-    ws = wb.worksheets[0]
-    head, c_code, c_desc, c_coll = find_columns(ws)
-    had_photo = photo_rows(price)
+    price_rows, had_photo = read_price(price)
+    head, c_code, c_desc, c_coll = find_columns(price_rows)
 
     rep = openpyxl.Workbook()
     rs = rep.active
@@ -237,7 +317,7 @@ def run(price, folder, out, log=print, progress=None):
 
     docs, saved = {}, {}
     stats = collections.Counter()
-    all_rows = list(ws.iter_rows(min_row=head + 1, values_only=True))
+    all_rows = price_rows[head:]
     log('Вырезаю фото...')
     for rownum, row in enumerate(all_rows, head + 1):
         if progress and rownum % 20 == 0:
@@ -246,8 +326,8 @@ def run(price, folder, out, log=print, progress=None):
         if not code or str(code).count('/') < 4 or not re.match(r'^[0-9A-Z]{3}/', str(code).strip()):
             continue
         code = str(code).strip()
-        desc = str(row[c_desc - 1] or '').strip()
-        coll = str(row[c_coll - 1] or '').strip() if c_coll else ''
+        desc = str(row[c_desc - 1] or '').strip() if len(row) >= c_desc else ''
+        coll = str(row[c_coll - 1] or '').strip() if c_coll and len(row) >= c_coll else ''
         sc = short_code(code)
         hits = index.get(sc, [])
         line = [rownum, coll, code, sc, desc, 'да' if rownum in had_photo else '']
@@ -286,6 +366,9 @@ def run(price, folder, out, log=print, progress=None):
             c.alignment = Alignment(vertical='center', wrap_text=True)
     rs.freeze_panes = 'A2'
     rs.auto_filter.ref = rs.dimensions
+    if not stats:
+        raise PriceError('В прайсе не найдено ни одного кода вида 91L/1SI97/0/00000/630-660. '
+                         'Проверьте, что выбран правильный файл и что в нём есть колонки CODE и DESCRIPTION.')
     log('Сохраняю отчёт...')
     rep.save(os.path.join(out, 'report.xlsx'))
     if progress:

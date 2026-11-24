@@ -31,7 +31,7 @@ class App(tk.Tk):
         frm.pack(fill='x', **pad)
         frm.columnconfigure(1, weight=1)
 
-        self._row(frm, 0, 'Прайс-лист (.xlsx):', self.price, self.pick_price)
+        self._row(frm, 0, 'Прайс-лист (.xlsx, .xls):', self.price, self.pick_price)
         self._row(frm, 1, 'Папка с каталогами (PDF):', self.catalogs, self.pick_catalogs)
         self._row(frm, 2, 'Куда сохранить результат:', self.out, self.pick_out)
 
@@ -59,7 +59,7 @@ class App(tk.Tk):
 
     # ---- выбор путей
     def pick_price(self):
-        p = filedialog.askopenfilename(title='Прайс-лист', filetypes=[('Excel', '*.xlsx'), ('Все файлы', '*.*')])
+        p = filedialog.askopenfilename(title='Прайс-лист', filetypes=[('Excel', '*.xlsx *.xls *.csv'), ('Все файлы', '*.*')])
         if p:
             self.price.set(p)
             if not self.catalogs.get():
@@ -113,6 +113,9 @@ class App(tk.Tk):
                                     log=lambda m: self.q.put(('log', m)),
                                     progress=lambda v: self.q.put(('prog', v)))
             self.q.put(('done', (stats, saved, out)))
+        except core.PriceError as e:
+            self.q.put(('log', f'\nОшибка: {e}'))
+            self.q.put(('error', str(e)))
         except Exception as e:
             self.q.put(('log', traceback.format_exc()))
             self.q.put(('error', str(e)))
