@@ -14,6 +14,8 @@ Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
 WizardStyle=modern
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -29,4 +31,4 @@ Name: "{group}\Bohemia Photos"; Filename: "{app}\BohemiaPhotos.exe"
 Name: "{autodesktop}\Bohemia Photos"; Filename: "{app}\BohemiaPhotos.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\BohemiaPhotos.exe"; Description: "Запустить"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\BohemiaPhotos.exe"; Description: "Запустить"; Flags: nowait postinstall

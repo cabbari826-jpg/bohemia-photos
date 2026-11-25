@@ -15,6 +15,7 @@ from tkinter import ttk, filedialog, messagebox
 import bohemia_photos as core
 import guzzini_photos
 import invoice_reader
+import updater
 
 APP_TITLE = 'Bohemia Photos — каталоги и документы'
 BRANDS = {'bohemia': ('Bohemia', core), 'guzzini': ('Guzzini', guzzini_photos)}
@@ -287,6 +288,8 @@ class App(tk.Tk):
         self.current = None
         self.show_home()
         self.after(100, self.poll)
+        if getattr(sys, 'frozen', False):
+            self.after(1500, self.check_updates)    # тихая проверка при запуске собранной программы
 
     def place_window(self):
         """Окно по центру экрана и целиком на экране; на маленьком экране — развернуть."""
@@ -318,7 +321,73 @@ class App(tk.Tk):
         ttk.Label(f, foreground='#555', justify='center',
                   text='Вырезать фото товаров из PDF-каталогов по кодам из прайс-листов\n'
                        '(Bohemia, Guzzini; несколько прайсов за один запуск)').pack(pady=(6, 0))
+        bottom = ttk.Frame(f)
+        bottom.pack(side='bottom', fill='x')
+        ttk.Label(bottom, text=f'Версия {updater.current_version()}', foreground='#777').pack(side='left')
+        self.upd_btn = ttk.Button(bottom, text='Проверить обновления', command=lambda: self.check_updates(True))
+        self.upd_btn.pack(side='right')
+        self.upd_label = ttk.Label(bottom, text='', foreground='#777')
+        self.upd_label.pack(side='right', padx=8)
         return f
+
+    # ---- обновления
+    def check_updates(self, manual=False):
+        self.upd_btn.configure(state='disabled')
+        self.upd_label.configure(text='Проверяю…' if manual else '')
+
+        def worker():
+            try:
+                self.q.put(('upd', (updater.check(), manual, None)))
+            except Exception as e:
+                self.q.put(('upd', (None, manual, e)))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update(self, rel, manual, err):
+        self.upd_btn.configure(state='normal')
+        if err:
+            self.upd_label.configure(text='')
+            if manual:
+                if getattr(err, 'code', None) == 404:
+                    messagebox.showwarning(APP_TITLE, 'Не удалось найти релизы: репозиторий программы на GitHub '
+                                                      'закрыт (private), а программа заходит туда без входа. '
+                                                      'Сделайте репозиторий публичным, и обновления заработают.')
+                else:
+                    messagebox.showwarning(APP_TITLE, f'Не удалось проверить обновления (нет интернета или GitHub '
+                                                      f'недоступен).\n\n{err}')
+            return
+        if not rel:
+            self.upd_label.configure(text='Установлена последняя версия' if manual else '')
+            return
+        self.upd_label.configure(text=f'Есть версия {rel["version"]}')
+        notes = rel['notes'].strip()
+        if len(notes) > 900:
+            notes = notes[:900] + '…'
+        if updater.is_installed() and rel['setup_url']:
+            if messagebox.askyesno(APP_TITLE, f'Доступна новая версия {rel["version"]} '
+                                              f'(у вас {updater.current_version()}).\n\n{notes}\n\n'
+                                              f'Скачать и установить сейчас? Программа закроется и откроется снова.'):
+                self.install_update(rel)
+        elif messagebox.askyesno(APP_TITLE, f'Доступна новая версия {rel["version"]} '
+                                            f'(у вас {updater.current_version()}).\n\n'
+                                            f'Эта копия запущена без установки. Открыть страницу загрузки?'):
+            import webbrowser
+            webbrowser.open(rel['page'])
+
+    def install_update(self, rel):
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo(APP_TITLE, 'Дождитесь окончания текущей работы и повторите.')
+            return
+        self.upd_btn.configure(state='disabled')
+        self.upd_label.configure(text='Скачиваю обновление…')
+
+        def worker():
+            try:
+                path = updater.download(rel['setup_url'],
+                                        lambda v: self.q.put(('upd_prog', v)))
+                self.q.put(('upd_ready', path))
+            except Exception as e:
+                self.q.put(('upd_fail', str(e)))
+        threading.Thread(target=worker, daemon=True).start()
 
     def _build_work(self):
         f = ttk.Frame(self.container, padding=(10, 8))
@@ -413,6 +482,21 @@ class App(tk.Tk):
                     self.back_btn.configure(state='normal')
                     self.open_btn.configure(state='normal')
                     messagebox.showinfo(APP_TITLE, msg)
+                elif kind == 'upd':
+                    self._on_update(*val)
+                elif kind == 'upd_prog':
+                    self.upd_label.configure(text=f'Скачиваю обновление… {int(val * 100)}%')
+                elif kind == 'upd_ready':
+                    self.upd_label.configure(text='Устанавливаю…')
+                    try:
+                        updater.run_installer(val)
+                        self.after(500, self.destroy)
+                    except Exception as e:
+                        messagebox.showerror(APP_TITLE, f'Не удалось запустить установщик: {e}')
+                elif kind == 'upd_fail':
+                    self.upd_btn.configure(state='normal')
+                    self.upd_label.configure(text='')
+                    messagebox.showerror(APP_TITLE, f'Не удалось скачать обновление: {val}')
                 elif kind == 'error':
                     self.status.configure(text='Ошибка')
                     self.btn.configure(state='normal')
