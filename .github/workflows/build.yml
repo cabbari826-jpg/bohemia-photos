@@ -2,6 +2,7 @@ name: Build Windows app
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: write
@@ -35,6 +36,7 @@ jobs:
             dist/BohemiaPhotos-Setup.exe
       # Релиз = версия из файла VERSION. Повторная сборка той же версии обновляет файлы релиза.
       - name: Publish release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.APP_VERSION }}
