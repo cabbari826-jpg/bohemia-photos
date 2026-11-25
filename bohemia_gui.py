@@ -252,12 +252,25 @@ class PhotosScreen(ttk.Frame):
         return work
 
 
+def enable_dpi_awareness():
+    """Windows с масштабом 125–175 %: без этого окно растягивается системой, выходит за экран и размыто."""
+    if sys.platform.startswith('win'):
+        try:
+            import ctypes
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            except Exception:
+                ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+
 class App(tk.Tk):
     def __init__(self):
+        enable_dpi_awareness()
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry('860x640')
-        self.minsize(660, 500)
+        self.place_window()
         self.q = queue.Queue()
         self.worker = None
         self.last_out = None
@@ -274,6 +287,22 @@ class App(tk.Tk):
         self.current = None
         self.show_home()
         self.after(100, self.poll)
+
+    def place_window(self):
+        """Окно по центру экрана и целиком на экране; на маленьком экране — развернуть."""
+        self.update_idletasks()
+        scale = max(1.0, self.winfo_fpixels('1i') / 96)        # масштаб Windows (1.25, 1.5…)
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w = min(int(900 * scale), int(sw * 0.9))
+        h = min(int(680 * scale), int(sh * 0.85))               # запас на панель задач
+        self.minsize(min(int(640 * scale), w), min(int(480 * scale), h))
+        x, y = max(0, (sw - w) // 2), max(0, (sh - h) // 2 - int(20 * scale))
+        self.geometry(f'{w}x{h}+{x}+{y}')
+        if sh < 800 * scale and sys.platform.startswith('win'):
+            try:
+                self.state('zoomed')
+            except tk.TclError:
+                pass
 
     # ---- экраны
     def _build_home(self):
