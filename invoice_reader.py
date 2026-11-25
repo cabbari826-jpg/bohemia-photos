@@ -3,7 +3,7 @@
 Proforma / Invoice из PDF -> Excel-отчёт, с необязательной сверкой с прайс-листом.
 
 Запуск:
-    python invoice_reader.py ОТЧЁТ.xlsx ФАЙЛ1.pdf [ФАЙЛ2.pdf ...] [--price ПРАЙС.xlsx]
+    python invoice_reader.py ОТЧЁТ.xlsx ФАЙЛ1.pdf [ФАЙЛ2.pdf ...] [--price ПРАЙС1.xlsx --price ПРАЙС2.xlsx ...]
 
 Что делает:
   1. В каждом PDF находит строку заголовков таблицы (Code / Description / Qty / Price / Amount,
@@ -574,19 +574,34 @@ def header_currency(title):
 class PriceList:
     """Прайс: индекс кодов (точный, короткий Bohemia, по началу кода для Guzzini) и цены."""
 
-    def __init__(self, path, log=print):
-        self.name = os.path.basename(path)
+    def __init__(self, paths, log=print):
+        """paths — один прайс или список прайсов (разные бренды проверяются вместе)."""
+        if isinstance(paths, str):
+            paths = [paths]
         self.rows = []
         self.index = collections.defaultdict(list)
         self.price_cols = []      # (заголовок, валюта)
-        for title, rows in self._sheets(path):
-            self._add_sheet(title, rows, log)
-        if not self.rows:
-            raise core.PriceError(f'В прайсе «{self.name}» не нашёл заголовков: нужна колонка кода '
-                                  f'(CODE / Item / Артикул / Код) и колонка цены (EUR / USD / Price / Цена).')
+        for path in paths:
+            self.name = os.path.basename(path)
+            before = len(self.rows)
+            for title, rows in self._sheets(path):
+                self._add_sheet(title, rows, log)
+            if len(self.rows) == before:
+                raise core.PriceError(f'В прайсе «{self.name}» не нашёл заголовков: нужна колонка кода '
+                                      f'(CODE / Item / Артикул / Код) и колонка цены (EUR / USD / Price / Цена).')
+            log(f'  прайс «{self.name}»: строк с кодами {len(self.rows) - before}')
         self.keys = sorted(self.index)
-        log(f'  прайс «{self.name}»: строк с кодами {len(self.rows)}, колонки цен: '
-            + ', '.join(t for t, _ in self.price_cols))
+
+    @staticmethod
+    def price_of(rec, currency):
+        """(колонка, цена) строки прайса: колонка в валюте документа, иначе первая."""
+        if not rec['prices']:
+            return '', None
+        for title, v in rec['prices'].items():
+            if currency and header_currency(title) == currency:
+                return title, v
+        title = next(iter(rec['prices']))
+        return title, rec['prices'][title]
 
     @staticmethod
     def _sheets(path):
@@ -640,7 +655,7 @@ class PriceList:
                 pv = parse_num(v, ',' if isinstance(v, str) and re.search(r'\d,\d{2}$', v) else '.')
                 if pv is not None:
                     prices[titles[c]] = round(pv, 4)
-            rec = dict(row=rn, sheet=sheet, code=codes[0], codes=codes, prices=prices,
+            rec = dict(row=rn, sheet=sheet, file=self.name, code=codes[0], codes=codes, prices=prices,
                        desc=str(row[desc_col] or '').strip() if desc_col is not None and desc_col < len(row) else '')
             self.rows.append(rec)
             keys = set()
@@ -676,13 +691,14 @@ class PriceList:
             # код документа — начало кода прайса (1793.00 -> 179300156)
             j = bisect.bisect_left(self.keys, k)
             found = []
-            while j < len(self.keys) and self.keys[j].startswith(k):
+            # остаток — код цвета/упаковки (до 5 знаков); так коды других брендов не цепляются случайно
+            while j < len(self.keys) and self.keys[j].startswith(k) and len(self.keys[j]) - len(k) <= 5:
                 found += [r for r in self.index[self.keys[j]] if r not in found]
                 j += 1
             if found:
                 return found, 'по началу кода'
             # код прайса — начало кода документа
-            for n in range(len(k) - 1, 4, -1):
+            for n in range(len(k) - 1, max(4, len(k) - 6), -1):
                 if k[:n] in self.index:
                     return self.index[k[:n]], 'по началу кода'
         return [], ''
@@ -704,17 +720,18 @@ def compare(items, infos, price, log=print):
             first = it['desc'].split()[0]
             if CODEISH_RE.match(first):
                 rows, how = price.lookup(first)
-        col = price.price_col(cur_of.get(it['file'], ''))
-        it['price_col'] = col
+        cur = cur_of.get(it['file'], '')
         if not rows:
-            it.update(pl_code='', pl_desc='', pl_price=None, diff=None, pct=None, how='', status='нет в прайсе')
+            it.update(pl_file='', price_col='', pl_code='', pl_desc='', pl_price=None, diff=None, pct=None,
+                      how='', status='нет в прайсе')
         else:
             r = rows[0]
-            plp = r['prices'].get(col)
+            col, plp = price.price_of(r, cur)
             shown = list(dict.fromkeys(x['code'] for x in rows))
-            it.update(pl_code=', '.join(shown[:5]) + (' …' if len(shown) > 5 else ''),
+            it.update(pl_file=r['file'], price_col=col,
+                      pl_code=', '.join(shown[:5]) + (' …' if len(shown) > 5 else ''),
                       pl_desc=r['desc'], pl_price=plp, how=how)
-            distinct = {x['prices'].get(col) for x in rows}
+            distinct = {price.price_of(x, cur)[1] for x in rows}
             if plp is None:
                 it.update(diff=None, pct=None, status='нет цены в прайсе')
             elif it['price'] is None:
@@ -751,7 +768,7 @@ def write_report(path, infos, items, price=None):
     cols = [('Файл', 26), ('Стр.', 5), ('№', 5), ('Код', 18), ('Описание', 40), ('Кол-во', 9), ('Ед.', 6),
             ('Цена', 11), ('Скидка', 8), ('Сумма', 12), ('Кол-во×цена', 12)]
     if price:
-        cols += [('Код в прайсе', 22), ('Как найден', 14), ('Описание (прайс)', 34), ('Колонка цены', 10),
+        cols += [('Прайс', 22), ('Код в прайсе', 22), ('Как найден', 14), ('Описание (прайс)', 34), ('Колонка цены', 10),
                  ('Цена прайса', 11), ('Разница', 10), ('Разница %', 9), ('Сверка с прайсом', 18)]
     for c, (t, w) in enumerate(cols):
         ws.set_column(c, c, w)
@@ -761,9 +778,9 @@ def write_report(path, infos, items, price=None):
                 it['price'], it['disc'], it['total'], it['check']]
         fmts = [cell, cell, cell, cell, cell, cell, cell, money, cell, money, fill(it['check'])]
         if price:
-            vals += [it['pl_code'], it['how'], it['pl_desc'], it['price_col'], it['pl_price'], it['diff'],
+            vals += [it['pl_file'], it['pl_code'], it['how'], it['pl_desc'], it['price_col'], it['pl_price'], it['diff'],
                      it['pct'], it['status']]
-            fmts += [cell, cell, cell, cell, money, money, cell, fill(it['status'])]
+            fmts += [cell, cell, cell, cell, cell, money, money, cell, fill(it['status'])]
         for c, (v, f) in enumerate(zip(vals, fmts)):
             if v is None or v == '':
                 ws.write_blank(r, c, None, f)
@@ -795,7 +812,8 @@ def write_report(path, infos, items, price=None):
 
 
 def run(pdfs, out_xlsx, price_path=None, log=print, progress=None):
-    """pdfs — список PDF (Proforma/Invoice), out_xlsx — путь отчёта, price_path — прайс (необязательно)."""
+    """pdfs — список PDF/Excel (Proforma/Invoice), out_xlsx — путь отчёта,
+    price_path — прайс или список прайсов (необязательно)."""
     if not pdfs:
         raise InvoiceError('Не выбраны PDF-файлы Proforma / Invoice.')
     infos, items, errors = [], [], []
@@ -820,7 +838,7 @@ def run(pdfs, out_xlsx, price_path=None, log=print, progress=None):
     stats = collections.Counter()
     price = None
     if price_path:
-        log('Читаю прайс...')
+        log('Читаю прайсы...')
         price = PriceList(price_path, log)
         log('Сверяю с прайсом...')
         stats = compare(items, infos, price, log)
@@ -840,15 +858,15 @@ def run(pdfs, out_xlsx, price_path=None, log=print, progress=None):
 
 def main():
     args = sys.argv[1:]
-    price = None
-    if '--price' in args:
+    price = []
+    while '--price' in args:
         i = args.index('--price')
-        price = args[i + 1]
+        price.append(args[i + 1])
         del args[i:i + 2]
     if len(args) < 2:
         print(__doc__)
         sys.exit(1)
-    run(args[1:], args[0], price)
+    run(args[1:], args[0], price or None)
 
 
 if __name__ == '__main__':

@@ -404,11 +404,47 @@ def crop(file, page_no, photo, docs):
     return core.crop(dict(file=file, page=page_no, rect=rect), docs)
 
 
+# ---------------------------------------------------------------- бренд прайса
+BOHEMIA_CODE = re.compile(r'^[0-9A-Z]{3}/[0-9A-Z]{4,5}/')
+
+
+def detect_brand(path):
+    """'bohemia' или 'guzzini' по кодам в прайсе (91L/1SI97/… — Bohemia, цифровые коды — Guzzini и др.)."""
+    name = os.path.basename(path).lower()
+    for key in ('bohemia', 'guzzini'):
+        if key in name:
+            return key
+    try:
+        if name.endswith(('.xlsx', '.xlsm')):
+            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+            rows = [r for ws in wb.worksheets for r in ws.iter_rows(max_row=60, values_only=True)]
+        else:
+            rows = core.read_price(path)[0][:60]
+    except Exception:
+        return 'bohemia'
+    for row in rows:
+        for v in row:
+            if v is not None and BOHEMIA_CODE.match(str(v).strip()):
+                return 'bohemia'
+    return 'guzzini'
+
+
 # ---------------------------------------------------------------- main
+_INDEX_CACHE = {}   # повторный запуск с той же папкой каталогов не читает PDF заново
+
+
 def run(price, folder, out, log=print, progress=None, existing_dir=None):
     os.makedirs(os.path.join(out, 'photos'), exist_ok=True)
     log('Читаю каталоги...')
-    index, npdf = build_index(folder, log, progress)
+    sig = (os.path.abspath(folder), tuple(sorted((f, os.path.getmtime(f)) for f in
+                                                 glob.glob(os.path.join(folder, '*.[pP][dD][fF]')))))
+    if sig in _INDEX_CACHE:
+        index, npdf = _INDEX_CACHE[sig]
+        log('  (каталоги уже прочитаны)')
+    else:
+        index, npdf = build_index(folder, log, progress)
+        _INDEX_CACHE.clear()
+        _INDEX_CACHE[sig] = (index, npdf)
     if not npdf:
         raise RuntimeError('В папке каталогов нет PDF-файлов')
     log(f'  найдено товаров в каталогах: {len(index)} (файлов: {npdf})')
