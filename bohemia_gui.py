@@ -16,6 +16,7 @@ import bohemia_photos as core
 import guzzini_photos
 import invoice_reader
 import updater
+import ui_theme as ui
 
 APP_TITLE = 'Inventa — каталоги и документы'
 BRANDS = {'bohemia': ('Bohemia', core), 'guzzini': ('Guzzini', guzzini_photos), 'helios': ('Helios', guzzini_photos)}
@@ -73,11 +74,24 @@ def on_drop(widget, callback):
         pass
 
 
-def path_row(parent, r, label, var, cmd, folder=True):
-    ttk.Label(parent, text=label).grid(row=r, column=0, sticky='w', pady=4)
+def step(parent, r, num, title, hint=''):
+    """Левая колонка шага: кружок с номером, название и подсказка."""
+    cell = tk.Frame(parent, bg=ui.CARD)
+    cell.grid(row=r, column=0, sticky='nw', pady=(8, 6), padx=(0, 14))
+    ui.badge(cell, str(num)).grid(row=0, column=0, rowspan=2, sticky='n', padx=(0, 10))
+    tk.Label(cell, text=title, bg=ui.CARD, fg=ui.INK, font=ui.F['bold'], anchor='w', justify='left').grid(
+        row=0, column=1, sticky='w')
+    if hint:
+        tk.Label(cell, text=hint, bg=ui.CARD, fg=ui.MUTED, font=ui.F['small'], anchor='w', justify='left').grid(
+            row=1, column=1, sticky='w')
+    return cell
+
+
+def path_row(parent, r, num, label, var, cmd, folder=True, hint=''):
+    step(parent, r, num, label, hint)
     e = ttk.Entry(parent, textvariable=var)
-    e.grid(row=r, column=1, sticky='ew', padx=6)
-    ttk.Button(parent, text='Обзор…', command=cmd).grid(row=r, column=2, sticky='ew')
+    e.grid(row=r, column=1, sticky='ew', pady=(8, 6))
+    ttk.Button(parent, text='Обзор…', command=cmd).grid(row=r, column=2, sticky='new', padx=(8, 0), pady=(6, 6))
     # перетащили файл в поле папки — берём папку, где он лежит
     on_drop(e, lambda ps: var.set(os.path.normpath(ps[0] if not folder or os.path.isdir(ps[0])
                                                     else os.path.dirname(ps[0]))))
@@ -88,22 +102,22 @@ class FileList(ttk.Frame):
     """Список файлов с кнопками «Добавить…» / «Убрать». label(path) — как показывать строку."""
 
     def __init__(self, master, title, filetypes, label=os.path.basename, extra=None, height=4):
-        super().__init__(master)
+        super().__init__(master, style='Card.TFrame')
         self.paths, self.title, self.filetypes, self.label = [], title, filetypes, label
         self.columnconfigure(0, weight=1)
-        self.box = tk.Listbox(self, height=height, selectmode='extended', activestyle='none')
-        self.box.grid(row=0, column=0, sticky='ew')
-        btns = ttk.Frame(self)
-        btns.grid(row=0, column=1, sticky='n', padx=(6, 0))
-        ttk.Button(btns, text='Добавить…', command=self.add).pack(fill='x')
-        ttk.Button(btns, text='Убрать', command=self.remove).pack(fill='x', pady=2)
+        fr, self.box = ui.listbox(self, height=height, selectmode='extended')
+        fr.grid(row=0, column=0, sticky='ew')
+        btns = ttk.Frame(self, style='Card.TFrame')
+        btns.grid(row=0, column=1, sticky='n', padx=(8, 0))
+        ttk.Button(btns, text='＋ Добавить…', command=self.add).pack(fill='x')
+        ttk.Button(btns, text='Убрать', command=self.remove).pack(fill='x', pady=4)
         for text, cmd in (extra or []):
             ttk.Button(btns, text=text, command=cmd).pack(fill='x')
         self.on_add = None
         on_drop(self.box, self.add_paths)
         if DND_OK and not self.paths:
-            self.box.insert('end', '  (перетащите файлы сюда или нажмите «Добавить…»)')
-            self.box.itemconfigure(0, foreground='#999')
+            self.box.insert('end', '  ⇣  перетащите файлы сюда или нажмите «Добавить…»')
+            self.box.itemconfigure(0, foreground=ui.MUTED)
             self._hint = True
 
     _hint = False
@@ -171,41 +185,38 @@ class FileList(ttk.Frame):
 class DocsScreen(ttk.Frame):
     """Proforma / Invoice -> Excel."""
     action = 'Сделать Excel'
+    eyebrow = 'ДОКУМЕНТЫ ПОСТАВЩИКА'
     heading = 'Proforma / Invoice → Excel, сверка с заказом'
 
     def __init__(self, master):
         super().__init__(master)
         self.out = tk.StringVar()
-        frm = ttk.Frame(self)
+        box = ui.card(self)
+        box.pack(fill='x')
+        frm = ttk.Frame(box, style='Card.TFrame', padding=(18, 8, 18, 12))
         frm.pack(fill='x')
         frm.columnconfigure(1, weight=1)
-        ttk.Label(frm, text='1. Документы поставщика\n(Proforma / Invoice, PDF или Excel):').grid(
-            row=0, column=0, sticky='nw', pady=4)
+        step(frm, 0, 1, 'Документы поставщика', 'Proforma / Invoice, PDF или Excel')
         self.docs = FileList(frm, 'Proforma / Invoice',
                              [('PDF и Excel', '*.pdf *.PDF *.xlsx *.xls *.csv'), ('Все файлы', '*.*')], height=3)
-        self.docs.grid(row=0, column=1, columnspan=2, sticky='ew', padx=6)
+        self.docs.grid(row=0, column=1, columnspan=2, sticky='ew', pady=6)
         self.docs.on_add = self._suggest_out
-        ttk.Label(frm, text='2. Наши заказы поставщику\n(Excel, необязательно):').grid(
-            row=1, column=0, sticky='nw', pady=4)
+        step(frm, 1, 2, 'Наши заказы поставщику', 'Excel, необязательно')
         self.orders = FileList(frm, 'Заказы поставщику', [('Excel', '*.xlsx *.xls *.csv'), ('Все файлы', '*.*')],
                                height=3)
-        self.orders.grid(row=1, column=1, columnspan=2, sticky='ew', padx=6, pady=4)
+        self.orders.grid(row=1, column=1, columnspan=2, sticky='ew', pady=6)
         self.orders.on_add = self._suggest_out
-        ttk.Label(frm, text='3. Прайсы для сверки\n(необязательно, можно несколько):').grid(
-            row=2, column=0, sticky='nw', pady=4)
+        step(frm, 2, 3, 'Прайсы для сверки', 'необязательно, можно несколько')
         self.prices = FileList(frm, 'Прайс-листы', PRICE_TYPES, height=3)
-        self.prices.grid(row=2, column=1, columnspan=2, sticky='ew', padx=6, pady=4)
-        ttk.Label(frm, text='4. Куда сохранить Excel:').grid(row=3, column=0, sticky='w', pady=4)
-        out_e = ttk.Entry(frm, textvariable=self.out)
-        out_e.grid(row=3, column=1, sticky='ew', padx=6)
-        ttk.Button(frm, text='Обзор…', command=self.pick_out).grid(row=3, column=2, sticky='ew')
+        self.prices.grid(row=2, column=1, columnspan=2, sticky='ew', pady=6)
+        out_e = path_row(frm, 3, 4, 'Куда сохранить Excel', self.out, self.pick_out, folder=False)
         # перетащили папку — отчёт в неё, перетащили xlsx — в этот файл
         on_drop(out_e, lambda ps: self.out.set(os.path.join(ps[0], 'documents_report.xlsx') if os.path.isdir(ps[0])
                                                else os.path.normpath(ps[0])))
-        ttk.Label(frm, foreground='#666',
+        ttk.Label(self, style='Muted.TLabel',
                   text='Если добавить и документы, и заказы — в отчёте будет лист «Сверка с заказом»: '
-                       'чего нет, что лишнее, где другое кол-во или цена.', wraplength=760, justify='left').grid(
-            row=4, column=0, columnspan=3, sticky='w', pady=(2, 0))
+                       'чего нет, что лишнее, где другое кол-во или цена.', wraplength=820, justify='left').pack(
+            anchor='w', pady=(8, 0))
 
     def _suggest_out(self, ps):
         if not self.out.get():
@@ -255,26 +266,29 @@ class DocsScreen(ttk.Frame):
 class PhotosScreen(ttk.Frame):
     """Фото из каталогов по одному или нескольким прайсам."""
     action = 'Вырезать фото'
+    eyebrow = 'КАТАЛОГИ'
     heading = 'Фото из каталогов'
 
     def __init__(self, master):
         super().__init__(master)
         self.brand = {}
         self.catalogs, self.existing, self.out = tk.StringVar(), tk.StringVar(), tk.StringVar()
-        frm = ttk.Frame(self)
+        box = ui.card(self)
+        box.pack(fill='x')
+        frm = ttk.Frame(box, style='Card.TFrame', padding=(18, 8, 18, 12))
         frm.pack(fill='x')
         frm.columnconfigure(1, weight=1)
-        ttk.Label(frm, text='1. Прайс-листы\n(можно несколько брендов):').grid(row=0, column=0, sticky='nw', pady=4)
+        step(frm, 0, 1, 'Прайс-листы', 'можно несколько брендов')
         self.prices = FileList(frm, 'Прайс-листы', PRICE_TYPES, label=self._label,
                                extra=[('Сменить бренд', self.toggle_brand)])
-        self.prices.grid(row=0, column=1, columnspan=2, sticky='ew', padx=6)
+        self.prices.grid(row=0, column=1, columnspan=2, sticky='ew', pady=6)
         self.prices.on_add = self._added
-        path_row(frm, 1, '2. Папка с каталогами (PDF):', self.catalogs, self.pick_catalogs)
-        path_row(frm, 2, '3. Имеющиеся фото (необязательно):', self.existing, self.pick_existing)
-        path_row(frm, 3, '4. Куда сохранить результат:', self.out, self.pick_out)
-        ttk.Label(frm, foreground='#666',
+        path_row(frm, 1, 2, 'Папка с каталогами', self.catalogs, self.pick_catalogs, hint='PDF-каталоги поставщиков')
+        path_row(frm, 2, 3, 'Имеющиеся фото', self.existing, self.pick_existing, hint='необязательно — их пропустим')
+        path_row(frm, 3, 4, 'Куда сохранить результат', self.out, self.pick_out)
+        ttk.Label(self, style='Muted.TLabel',
                   text='Бренд каждого прайса определяется по кодам. Если ошибся — выделите прайс и нажмите '
-                       '«Сменить бренд».').grid(row=4, column=0, columnspan=3, sticky='w', pady=(2, 0))
+                       '«Сменить бренд».', wraplength=820, justify='left').pack(anchor='w', pady=(8, 0))
 
     def _label(self, p):
         name = BRANDS[self.brand.get(p, 'bohemia')][0]
@@ -383,6 +397,7 @@ class App(tk.Tk):
         enable_dpi_awareness()
         super().__init__()
         enable_dnd(self)
+        ui.apply(self)
         self.title(APP_TITLE)
         try:   # иконка окна (в exe файл вшит рядом с программой)
             base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
@@ -393,11 +408,7 @@ class App(tk.Tk):
         self.q = queue.Queue()
         self.worker = None
         self.last_out = None
-        style = ttk.Style(self)
-        style.configure('Big.TButton', font=('Segoe UI', 13, 'bold'), padding=(18, 14))
-        style.configure('Run.TButton', font=('Segoe UI', 11, 'bold'), padding=(14, 6))
-        style.configure('H.TLabel', font=('Segoe UI', 14, 'bold'))
-
+        self._build_header()
         self.container = ttk.Frame(self)
         self.container.pack(fill='both', expand=True)
         self.home = self._build_home()
@@ -427,26 +438,65 @@ class App(tk.Tk):
                 pass
 
     # ---- экраны
+    def _build_header(self):
+        h = tk.Frame(self, bg=ui.TEAL, height=56)
+        h.pack(fill='x')
+        h.pack_propagate(False)
+        self._logo = ui.logo(self, 30)
+        if self._logo:
+            tk.Label(h, image=self._logo, bg=ui.TEAL).pack(side='left', padx=(18, 10))
+        tk.Label(h, text='Inventa', bg=ui.TEAL, fg='#ffffff', font=ui.F['brand']).pack(side='left')
+        tk.Label(h, text='by Jooble Soft', bg=ui.TEAL, fg='#9cc3cc', font=ui.F['small']).pack(
+            side='left', padx=(8, 0), pady=(5, 0))
+        self.upd_btn = ttk.Button(h, text='Проверить обновления', style='Ghost.TButton',
+                                  command=lambda: self.check_updates(True))
+        self.upd_btn.pack(side='right', padx=(0, 18))
+        tk.Label(h, text=f'версия {updater.current_version()}', bg=ui.TEAL, fg='#9cc3cc',
+                 font=ui.F['small']).pack(side='right', padx=(0, 12))
+        self.upd_label = tk.Label(h, text='', bg=ui.TEAL, fg=ui.AMBER, font=ui.F['small'])
+        self.upd_label.pack(side='right', padx=(0, 12))
+
+    TASKS = [
+        ('docs', '📄', 'Proforma / Invoice → Excel',
+         'Позиции из PDF или Excel документов поставщика — в аккуратную таблицу Excel.',
+         ['Сверка с нашим заказом: чего нет, что лишнее', 'Сверка цен с прайс-листами',
+          'Проверка «кол-во × цена = сумма»']),
+        ('photos', '🖼', 'Фото из каталогов',
+         'По кодам из прайс-листа находит товары в PDF-каталогах и сохраняет их фото.',
+         ['Bohemia, Guzzini, Helios', 'Несколько прайсов за один запуск', 'Пропускает фото, которые уже есть']),
+    ]
+
     def _build_home(self):
-        f = ttk.Frame(self.container, padding=30)
-        ttk.Label(f, text='Что нужно сделать?', style='H.TLabel').pack(pady=(10, 24))
-        ttk.Button(f, text='📄  Proforma / Invoice  →  Excel', style='Big.TButton',
-                   command=lambda: self.show('docs')).pack(fill='x', padx=60)
-        ttk.Label(f, foreground='#555', justify='center',
-                  text='Выписать позиции из PDF (или Excel) документов в Excel-отчёт,\n'
-                       'сверить их с нашим заказом поставщику и с прайс-листами').pack(pady=(6, 26))
-        ttk.Button(f, text='🖼  Фото из каталогов', style='Big.TButton',
-                   command=lambda: self.show('photos')).pack(fill='x', padx=60)
-        ttk.Label(f, foreground='#555', justify='center',
-                  text='Вырезать фото товаров из PDF-каталогов по кодам из прайс-листов\n'
-                       '(Bohemia, Guzzini, Helios; несколько прайсов за один запуск)').pack(pady=(6, 0))
-        bottom = ttk.Frame(f)
-        bottom.pack(side='bottom', fill='x')
-        ttk.Label(bottom, text=f'Версия {updater.current_version()}  ·  © Jooble Soft', foreground='#777').pack(side='left')
-        self.upd_btn = ttk.Button(bottom, text='Проверить обновления', command=lambda: self.check_updates(True))
-        self.upd_btn.pack(side='right')
-        self.upd_label = ttk.Label(bottom, text='', foreground='#777')
-        self.upd_label.pack(side='right', padx=8)
+        f = ttk.Frame(self.container, padding=(28, 22, 28, 18))
+        ttk.Label(f, text='ЗАДАЧИ', style='Eyebrow.TLabel').pack(anchor='w')
+        ttk.Label(f, text='Что нужно сделать?', style='H1.TLabel').pack(anchor='w', pady=(2, 2))
+        ttk.Label(f, text='Выберите задачу, добавьте файлы (можно перетащить мышью) и нажмите одну кнопку. '
+                         'Исходные файлы не меняются.', style='Muted.TLabel').pack(anchor='w', pady=(0, 18))
+        row = ttk.Frame(f)
+        row.pack(fill='both', expand=True)
+        for col, (key, icon, title, desc, points) in enumerate(self.TASKS):
+            row.columnconfigure(col, weight=1, uniform='task')
+            c = ui.card(row, padx=20, pady=18, cursor='hand2')
+            c.grid(row=0, column=col, sticky='nsew', padx=(0 if col == 0 else 8, 8 if col == 0 else 0))
+            ic = tk.Label(c, text=icon, bg=ui.MIST, fg=ui.TEAL, font=(ui.F['h2'][0], 16), width=3, height=1)
+            ic.pack(anchor='w')
+            tk.Label(c, text=title, bg=ui.CARD, fg=ui.INK, font=ui.F['h3'], anchor='w').pack(
+                anchor='w', pady=(14, 4))
+            d = tk.Label(c, text=desc, bg=ui.CARD, fg=ui.INK_SOFT, font=ui.F['body'], justify='left', anchor='w',
+                         wraplength=330)
+            d.pack(anchor='w', fill='x')
+            tk.Frame(c, bg=ui.LINE, height=1).pack(fill='x', pady=12)
+            for ptxt in points:
+                ui.bullet(c, ptxt).pack(anchor='w', fill='x', pady=2)
+            ttk.Button(c, text='Открыть  →', style='Accent.TButton',
+                       command=lambda k=key: self.show(k)).pack(anchor='w', pady=(16, 0))
+            # вся карточка кликабельна; при наведении — бирюзовая рамка
+            for w in [c] + list(c.winfo_children()):
+                if isinstance(w, tk.Label) or w is c:
+                    w.bind('<Button-1>', lambda e, k=key: self.show(k))
+            c.bind('<Enter>', lambda e, c=c: c.configure(highlightbackground=ui.TEAL_2))
+            c.bind('<Leave>', lambda e, c=c: c.configure(highlightbackground=ui.LINE))
+            c.bind('<Configure>', lambda e, d=d: d.configure(wraplength=max(200, e.width - 44)))
         return f
 
     # ---- обновления
@@ -528,27 +578,32 @@ class App(tk.Tk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _build_work(self):
-        f = ttk.Frame(self.container, padding=(10, 8))
+        f = ttk.Frame(self.container, padding=(28, 14, 28, 16))
         top = ttk.Frame(f)
         top.pack(fill='x')
-        self.back_btn = ttk.Button(top, text='← Назад', command=self.show_home)
-        self.back_btn.pack(side='left')
-        self.heading = ttk.Label(top, text='', style='H.TLabel')
-        self.heading.pack(side='left', padx=14)
+        self.back_btn = ttk.Button(top, text='←  Все задачи', style='Back.TButton', command=self.show_home)
+        self.back_btn.pack(anchor='w')
+        self.eyebrow = ttk.Label(f, text='', style='Eyebrow.TLabel')
+        self.eyebrow.pack(anchor='w', pady=(8, 0))
+        self.heading = ttk.Label(f, text='', style='H2.TLabel')
+        self.heading.pack(anchor='w', pady=(0, 12))
         self.body = ttk.Frame(f)
-        self.body.pack(fill='x', pady=(10, 4))
+        self.body.pack(fill='x')
         bar = ttk.Frame(f)
-        bar.pack(fill='x', pady=6)
-        self.btn = ttk.Button(bar, text='Запустить', style='Run.TButton', command=self.start)
+        bar.pack(fill='x', pady=(14, 10))
+        self.btn = ttk.Button(bar, text='Запустить', style='Accent.TButton', command=self.start)
         self.btn.pack(side='left')
         self.open_btn = ttk.Button(bar, text='Открыть результат', command=self.open_out, state='disabled')
-        self.open_btn.pack(side='left', padx=8)
-        self.status = ttk.Label(bar, text='')
+        self.open_btn.pack(side='left', padx=10)
+        self.status = ttk.Label(bar, text='', style='Status.TLabel')
         self.status.pack(side='right')
         self.pb = ttk.Progressbar(f, mode='determinate', maximum=100)
         self.pb.pack(fill='x')
-        self.log = tk.Text(f, height=12, wrap='word', state='disabled')
-        self.log.pack(fill='both', expand=True, pady=(8, 0))
+        lc = ui.card(f)
+        lc.pack(fill='both', expand=True, pady=(10, 0))
+        self.log = tk.Text(lc, height=8, wrap='word', state='disabled', bg=ui.FIELD, fg=ui.INK_SOFT,
+                           font=ui.F['mono'], relief='flat', bd=0, padx=12, pady=10, highlightthickness=0)
+        self.log.pack(fill='both', expand=True)
         self.built = {}
         return f
 
@@ -567,6 +622,7 @@ class App(tk.Tk):
         self.current = self.built[key]
         self.current.pack(fill='x')
         self.heading.configure(text=self.current.heading)
+        self.eyebrow.configure(text=self.current.eyebrow)
         self.btn.configure(text=self.current.action)
         self.open_btn.configure(state='disabled')
         self.status.configure(text='')
@@ -588,7 +644,7 @@ class App(tk.Tk):
         self.back_btn.configure(state='disabled')
         self.open_btn.configure(state='disabled')
         self.pb['value'] = 0
-        self.status.configure(text='Работаю…')
+        self.status.configure(text='Работаю…', foreground=ui.INK_SOFT)
         self._clear_log()
         self.worker = threading.Thread(target=self._work, args=(work,), daemon=True)
         self.worker.start()
@@ -615,7 +671,7 @@ class App(tk.Tk):
                 elif kind == 'done':
                     msg, self.last_out = val
                     self.pb['value'] = 100
-                    self.status.configure(text='Готово')
+                    self.status.configure(text='✓ Готово', foreground=ui.OK)
                     self.btn.configure(state='normal')
                     self.back_btn.configure(state='normal')
                     self.open_btn.configure(state='normal')
@@ -641,7 +697,7 @@ class App(tk.Tk):
                     self.upd_label.configure(text='')
                     messagebox.showerror(APP_TITLE, f'Не удалось скачать обновление: {val}')
                 elif kind == 'error':
-                    self.status.configure(text='Ошибка')
+                    self.status.configure(text='Ошибка', foreground=ui.BAD)
                     self.btn.configure(state='normal')
                     self.back_btn.configure(state='normal')
                     messagebox.showerror(APP_TITLE, f'Ошибка: {val}')
