@@ -46,8 +46,9 @@ jobs:
           Start-Sleep 8
           $log = "$env:RUNNER_TEMP\upd.log"
           $p = Start-Process dist\Inventa-Setup.exe -ArgumentList '/SP-','/SILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS','/NOCANCEL',"/LOG=$log","/DIR=$dir" -PassThru
-          Start-Sleep 2
-          Stop-Process -Id $app.Id -ErrorAction SilentlyContinue   # программа сама выходит после запуска установщика
+          Start-Sleep 1
+          # программа сама выходит после запуска установщика (у onefile-exe два процесса)
+          Get-Process Inventa -ErrorAction SilentlyContinue | Stop-Process -Force
           $p.WaitForExit(180000) | Out-Null
           Get-Content $log -Tail 25
           $v = (Get-Item $exe).VersionInfo.FileVersion

@@ -59,17 +59,20 @@ Filename: "{app}\Inventa.exe"; Description: "Запустить"; Flags: nowait 
 function WaitUnlocked(f: String): Boolean;
 var
   i: Integer;
+  st: TFileStream;
 begin
+  // запущенный exe можно переименовать, но нельзя открыть на запись — проверяем именно запись
   Result := True;
   for i := 1 to 40 do
   begin
     if not FileExists(f) then Exit;
-    if RenameFile(f, f + '.upd') then
-    begin
-      RenameFile(f + '.upd', f);
+    try
+      st := TFileStream.Create(f, fmOpenReadWrite or fmShareExclusive);
+      st.Free;
       Exit;
+    except
+      Sleep(500);
     end;
-    Sleep(500);
   end;
   Result := False;
 end;
