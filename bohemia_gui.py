@@ -504,9 +504,15 @@ class App(tk.Tk):
         self._build_header()
         self.container = ttk.Frame(self)
         self.container.pack(fill='both', expand=True)
+        self.container.rowconfigure(0, weight=1)
+        self.container.columnconfigure(0, weight=1)
+        # Все экраны лежат стопкой в одной ячейке и всегда «на месте»: переход — это просто поднять
+        # нужный наверх. Ничего не перекладывается и не перерисовывается заново, поэтому мгновенно.
         self.home = self._build_home()
         self.screens = {'docs': DocsScreen, 'photos': PhotosScreen}
         self.work_frame = self._build_work()
+        self.work_frame.grid(row=0, column=0, sticky='nsew')
+        self.home.grid(row=0, column=0, sticky='nsew')
         self.current = None
         self.show_home()
         self.after(100, self.poll)
@@ -696,8 +702,10 @@ class App(tk.Tk):
         self.eyebrow.pack(anchor='w', pady=(8, 0))
         self.heading = ttk.Label(f, text='', style='H2.TLabel')
         self.heading.pack(anchor='w', pady=(0, 12))
-        self.body = ttk.Frame(f)
+        self.body = ttk.Frame(f, height=1)
         self.body.pack(fill='x')
+        self.body.columnconfigure(0, weight=1)
+        self.body.grid_propagate(False)     # высота — по текущему экрану (см. show)
         bar = ttk.Frame(f)
         bar.pack(fill='x', pady=(14, 10))
         self.btn = MotionButton(bar, text='Запустить', kind='accent', width=210, height=50, bg=ui.PAPER,
@@ -725,23 +733,34 @@ class App(tk.Tk):
             keys.pop(0)
         if not keys:
             return
-        self.built[keys[0]] = self.screens[keys[0]](self.body)
+        self._add_screen(keys[0])
         self.after(50, self._prebuild, keys[1:])
+
+    def _add_screen(self, key):
+        scr = self.built[key] = self.screens[key](self.body)
+        scr.grid(row=0, column=0, sticky='new')
+        scr.bind('<Configure>', lambda e: self.after_idle(self._fit_body), add='+')
+        if self.current is not None:
+            self.current.tkraise()
+        return scr
+
+    def _fit_body(self):
+        if self.current is not None:
+            h = max(1, self.current.winfo_reqheight())
+            if int(self.body.cget('height')) != h:
+                self.body.configure(height=h)
 
     def show_home(self):
         if self.worker and self.worker.is_alive():
             return
-        self.work_frame.pack_forget()
-        self.home.pack(fill='both', expand=True)
+        self.home.tkraise()
 
     def show(self, key):
-        self.home.pack_forget()
-        if self.current is not None:
-            self.current.pack_forget()
         if key not in self.built:
-            self.built[key] = self.screens[key](self.body)
+            self._add_screen(key)
         self.current = self.built[key]
-        self.current.pack(fill='x')
+        self.current.tkraise()
+        self._fit_body()
         self.heading.configure(text=self.current.heading)
         self.eyebrow.configure(text=self.current.eyebrow)
         self.btn.configure(text=self.current.action)
@@ -749,7 +768,7 @@ class App(tk.Tk):
         self.status.configure(text='')
         self.pb['value'] = 0
         self._clear_log()
-        self.work_frame.pack(fill='both', expand=True)
+        self.work_frame.tkraise()
 
     # ---- запуск
     def open_out(self):
