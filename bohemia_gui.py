@@ -55,6 +55,31 @@ def enable_dnd(root):
         DND_OK = False
 
 
+def _settings_path():
+    return os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'), 'Inventa', 'settings.json')
+
+
+def load_settings():
+    import json
+    try:
+        with open(_settings_path(), encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(**kw):
+    import json
+    d = load_settings()
+    d.update(kw)
+    try:
+        os.makedirs(os.path.dirname(_settings_path()), exist_ok=True)
+        with open(_settings_path(), 'w', encoding='utf-8') as f:
+            json.dump(d, f)
+    except OSError:
+        pass
+
+
 def drop_weight(paths):
     """Сколько весят перетащенные файлы (папка — сумма файлов в ней, без вложенных)."""
     total = 0
@@ -250,10 +275,13 @@ class DocsScreen(ttk.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.out = tk.StringVar()
-        box = ui.card(self, padding=(26, 16, 26, 18))
+        box = ui.card(self, padding=(26, 16, 26, 4))
         box.pack(fill='x')
         frm = ttk.Frame(box, style='Flat.TFrame')
         frm.pack(fill='x')
+        # запас внизу карточки: когда поле «проседает» от упавшего файла, запас уменьшается на столько же,
+        # и карточка не меняет размер — двигаются только соседние строки внутри неё (быстро, без мигания)
+        self.after_idle(lambda: motion.attach_spacer(frm, box))
         frm.columnconfigure(1, weight=1)
         step(frm, 0, 1, 'Документы поставщика', 'Proforma / Invoice, PDF или Excel')
         self.docs = FileList(frm, 'Proforma / Invoice',
@@ -333,10 +361,13 @@ class PhotosScreen(ttk.Frame):
         super().__init__(master)
         self.brand = {}
         self.catalogs, self.existing, self.out = tk.StringVar(), tk.StringVar(), tk.StringVar()
-        box = ui.card(self, padding=(26, 16, 26, 18))
+        box = ui.card(self, padding=(26, 16, 26, 4))
         box.pack(fill='x')
         frm = ttk.Frame(box, style='Flat.TFrame')
         frm.pack(fill='x')
+        # запас внизу карточки: когда поле «проседает» от упавшего файла, запас уменьшается на столько же,
+        # и карточка не меняет размер — двигаются только соседние строки внутри неё (быстро, без мигания)
+        self.after_idle(lambda: motion.attach_spacer(frm, box))
         frm.columnconfigure(1, weight=1)
         step(frm, 0, 1, 'Прайс-листы', 'можно несколько брендов')
         self.prices = FileList(frm, 'Прайс-листы', PRICE_TYPES, label=self._label,
@@ -458,6 +489,7 @@ class App(tk.Tk):
         ui.load_fonts()
         super().__init__()
         enable_dnd(self)
+        motion.set_enabled(load_settings().get('animation', True))
         ui.apply(self)
         self.title(APP_TITLE)
         try:   # иконка окна (в exe файл вшит рядом с программой)
@@ -472,12 +504,19 @@ class App(tk.Tk):
         self._build_header()
         self.container = ttk.Frame(self)
         self.container.pack(fill='both', expand=True)
+        self.container.rowconfigure(0, weight=1)
+        self.container.columnconfigure(0, weight=1)
+        # Все экраны лежат стопкой в одной ячейке и всегда «на месте»: переход — это просто поднять
+        # нужный наверх. Ничего не перекладывается и не перерисовывается заново, поэтому мгновенно.
         self.home = self._build_home()
         self.screens = {'docs': DocsScreen, 'photos': PhotosScreen}
         self.work_frame = self._build_work()
+        self.work_frame.grid(row=0, column=0, sticky='nsew')
+        self.home.grid(row=0, column=0, sticky='nsew')
         self.current = None
         self.show_home()
         self.after(100, self.poll)
+        self.after(400, self._prebuild)        # экраны задач строим заранее, пока пользователь смотрит на главный
         if getattr(sys, 'frozen', False):
             self.after(300, self.after_update)
             self.after(1500, self.check_updates)    # тихая проверка при запуске собранной программы
@@ -512,10 +551,22 @@ class App(tk.Tk):
         self.upd_btn = MotionButton(h, text='Проверить обновления', kind='ghost', width=176, height=34, bg=ui.TEAL,
                                     command=lambda: self.check_updates(True))
         self.upd_btn.pack(side='right', padx=(0, 18))
+        self.anim_btn = MotionButton(h, text=self._anim_text(), kind='ghost', width=150, height=34, bg=ui.TEAL,
+                                     command=self.toggle_animation)
+        self.anim_btn.pack(side='right', padx=(0, 8))
         tk.Label(h, text=f'версия {updater.current_version()}', bg=ui.TEAL, fg='#9cc3cc',
                  font=ui.F['small']).pack(side='right', padx=(0, 12))
         self.upd_label = tk.Label(h, text='', bg=ui.TEAL, fg=ui.AMBER, font=ui.F['small'])
         self.upd_label.pack(side='right', padx=(0, 12))
+
+    @staticmethod
+    def _anim_text():
+        return 'Анимация: вкл' if motion.ENABLED else 'Анимация: выкл'
+
+    def toggle_animation(self):
+        motion.set_enabled(not motion.ENABLED)
+        save_settings(animation=motion.ENABLED)
+        self.anim_btn.configure(text=self._anim_text())
 
     TASKS = [
         ('docs', '📄', 'Proforma / Invoice → Excel',
@@ -651,8 +702,10 @@ class App(tk.Tk):
         self.eyebrow.pack(anchor='w', pady=(8, 0))
         self.heading = ttk.Label(f, text='', style='H2.TLabel')
         self.heading.pack(anchor='w', pady=(0, 12))
-        self.body = ttk.Frame(f)
+        self.body = ttk.Frame(f, height=1)
         self.body.pack(fill='x')
+        self.body.columnconfigure(0, weight=1)
+        self.body.grid_propagate(False)     # высота — по текущему экрану (см. show)
         bar = ttk.Frame(f)
         bar.pack(fill='x', pady=(14, 10))
         self.btn = MotionButton(bar, text='Запустить', kind='accent', width=210, height=50, bg=ui.PAPER,
@@ -673,20 +726,41 @@ class App(tk.Tk):
         self.built = {}
         return f
 
+    def _prebuild(self, keys=None):
+        """Строит экраны задач в фоне по одному (не показывая), чтобы переход на них был мгновенным."""
+        keys = list(self.screens) if keys is None else keys
+        while keys and keys[0] in self.built:
+            keys.pop(0)
+        if not keys:
+            return
+        self._add_screen(keys[0])
+        self.after(50, self._prebuild, keys[1:])
+
+    def _add_screen(self, key):
+        scr = self.built[key] = self.screens[key](self.body)
+        scr.grid(row=0, column=0, sticky='new')
+        scr.bind('<Configure>', lambda e: self.after_idle(self._fit_body), add='+')
+        if self.current is not None:
+            self.current.tkraise()
+        return scr
+
+    def _fit_body(self):
+        if self.current is not None:
+            h = max(1, self.current.winfo_reqheight())
+            if int(self.body.cget('height')) != h:
+                self.body.configure(height=h)
+
     def show_home(self):
         if self.worker and self.worker.is_alive():
             return
-        self.work_frame.pack_forget()
-        self.home.pack(fill='both', expand=True)
+        self.home.tkraise()
 
     def show(self, key):
-        self.home.pack_forget()
-        if self.current is not None:
-            self.current.pack_forget()
         if key not in self.built:
-            self.built[key] = self.screens[key](self.body)
+            self._add_screen(key)
         self.current = self.built[key]
-        self.current.pack(fill='x')
+        self.current.tkraise()
+        self._fit_body()
         self.heading.configure(text=self.current.heading)
         self.eyebrow.configure(text=self.current.eyebrow)
         self.btn.configure(text=self.current.action)
@@ -694,7 +768,7 @@ class App(tk.Tk):
         self.status.configure(text='')
         self.pb['value'] = 0
         self._clear_log()
-        self.work_frame.pack(fill='both', expand=True)
+        self.work_frame.tkraise()
 
     # ---- запуск
     def open_out(self):

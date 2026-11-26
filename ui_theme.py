@@ -102,14 +102,37 @@ def _px(v):
     return max(1, int(round(v * S)))
 
 
+CENTER = 160
+
+
+def _widen(img, b, cx, cy):
+    """Раздвигает середину 9-частной картинки (b — ширина краёв): углы как есть, края и середина
+    растягиваются. Края однородны вдоль растяжения, поэтому NEAREST — без потери качества."""
+    w, h = img.size
+    W, H = w + cx, h + cy
+    out = Image.new(img.mode, (W, H))
+    xs = ((0, b, 0, b), (b, w - b, b, W - b), (w - b, w, W - b, W))
+    ys = ((0, b, 0, b), (b, h - b, b, H - b), (h - b, h, H - b, H))
+    for sx0, sx1, dx0, dx1 in xs:
+        for sy0, sy1, dy0, dy1 in ys:
+            if sx1 > sx0 and sy1 > sy0 and dx1 > dx0 and dy1 > dy0:
+                part = img.crop((sx0, sy0, sx1, sy1)).resize((dx1 - dx0, dy1 - dy0), Image.NEAREST)
+                out.paste(part, (dx0, dy0))
+    return out
+
+
 def _elem(style, root, name, r, fill, outer, border=None, states=(), size=None):
     """Элемент темы из скруглённой картинки, растягиваемой по 9 частям."""
     sz = size or 2 * _px(r) + 8
     rr = _px(r)
-    base = _photo(root, round_image(sz, sz, rr, fill, outer, border))
-    st = []
-    for spec, f, b in states:
-        st.append((spec, _photo(root, round_image(sz, sz, rr, f, outer, b))))
+    # Середину делаем большой: Tk заполняет растянутую середину копиями этого куска, и если он
+    # крошечный, большая карточка рисуется тысячами мелких копий — на Windows это сотни миллисекунд.
+    cx, cy = CENTER, (0 if size else CENTER)
+
+    def img(f, b):
+        return _photo(root, _widen(round_image(sz, sz, rr, f, outer, b), rr + 1, cx, cy))
+    base = img(fill, border)
+    st = [(spec, img(f, b)) for spec, f, b in states]
     style.element_create(name, 'image', base, *st, border=rr + 1, padding=0, sticky='nsew')
 
 
