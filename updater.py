@@ -88,53 +88,28 @@ MARK = 'update.json'
 LOG_NAME = 'Inventa-update.log'
 
 
-def _writable(folder):
-    try:
-        t = os.path.join(folder, '.inventa-write-test')
-        with open(t, 'w'):
-            pass
-        os.remove(t)
-        return True
-    except OSError:
-        return False
-
-
-def installer_args(folder, log, all_users=False):
-    a = ['/SP-', '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/NOCANCEL',
-         f'/LOG={log}', f'/DIR={folder}']
-    if all_users:
-        a.append('/ALLUSERS')
-    return a
-
-
-def _quote(a):
-    # /DIR=C:\Program Files\Inventa -> "/DIR=C:\Program Files\Inventa" (так понимает Inno Setup)
-    return f'"{a}"' if ' ' in a else a
+def installer_args(log):
+    return ['/SP-', '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/NOCANCEL', f'/LOG={log}']
 
 
 def run_installer(path, version=''):
-    """Запускает установщик тихо в ту же папку, где стоит программа; он закроет программу,
-    обновит и запустит её снова. Ход установки пишется в журнал %TEMP%\\Inventa-update.log;
-    при следующем запуске программа проверит, что версия действительно сменилась (pending_result)."""
-    folder = os.path.dirname(sys.executable)
+    """Запускает установщик тихо: он закроет программу, удалит прежнюю установку, поставит новую версию
+    и запустит её. Ход установки пишется в %TEMP%\\Inventa-update.log; при следующем запуске
+    программа проверит, что версия действительно сменилась (pending_result)."""
     log = os.path.join(tempfile.gettempdir(), LOG_NAME)
-    # программа стоит в Program Files (ставили «для всех») — без прав администратора туда не записать
-    admin = not _writable(folder)
-    args = installer_args(folder, log, admin)
+    args = installer_args(log)
     try:
         with open(os.path.join(_state_dir(), MARK), 'w', encoding='utf-8') as f:
-            json.dump(dict(target=version, old=current_version(), log=log, folder=folder), f)
+            json.dump(dict(target=version, old=current_version(), log=log), f)
     except OSError:
         pass
     if sys.platform.startswith('win'):
         import ctypes
-        # как двойной щелчок по файлу: отдельный процесс, не связанный с программой; для Program Files — запрос UAC
-        rc = ctypes.windll.shell32.ShellExecuteW(None, 'runas' if admin else 'open', path,
-                                                 ' '.join(_quote(a) for a in args), None, 1)
+        # как двойной щелчок по файлу: отдельный процесс, не связанный с программой
+        rc = ctypes.windll.shell32.ShellExecuteW(None, 'open', path,
+                                                 ' '.join(f'"{a}"' if ' ' in a else a for a in args), None, 1)
         if rc > 32:
             return
-        if admin:
-            raise OSError('нужны права администратора: программа установлена в ' + folder)
     subprocess.Popen([path] + args, close_fds=True)
 
 

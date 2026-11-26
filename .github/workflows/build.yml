@@ -45,7 +45,7 @@ jobs:
           $app = Start-Process $exe -PassThru
           Start-Sleep 8
           $log = "$env:RUNNER_TEMP\upd.log"
-          $p = Start-Process dist\Inventa-Setup.exe -ArgumentList '/SP-','/SILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS','/NOCANCEL',"/LOG=$log","/DIR=$dir" -PassThru
+          $p = Start-Process dist\Inventa-Setup.exe -ArgumentList '/SP-','/SILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS','/NOCANCEL',"/LOG=$log" -PassThru
           Start-Sleep 5   # установщик должен дождаться, пока программа закроется
           # программа сама выходит после запуска установщика (у onefile-exe два процесса)
           Get-Process Inventa -ErrorAction SilentlyContinue | Stop-Process -Force
