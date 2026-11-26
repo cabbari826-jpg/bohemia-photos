@@ -33,10 +33,55 @@ def open_path(p):
         os.system(f'xdg-open "{p}"')
 
 
-def path_row(parent, r, label, var, cmd):
+# ---- перетаскивание файлов мышью (tkinterdnd2; без него программа работает как раньше)
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+except Exception:          # библиотеки нет — просто без drag'n'drop
+    TkinterDnD = DND_FILES = None
+DND_OK = False
+
+
+def enable_dnd(root):
+    global DND_OK
+    if TkinterDnD is None:
+        return
+    try:
+        TkinterDnD._require(root)
+        DND_OK = True
+    except Exception:
+        DND_OK = False
+
+
+def on_drop(widget, callback):
+    """callback(список путей) при перетаскивании файлов/папок на виджет."""
+    if not DND_OK:
+        return
+
+    def handler(e):
+        try:
+            paths = [p for p in widget.tk.splitlist(e.data) if p]
+            if paths:
+                callback(paths)
+        except Exception:
+            traceback.print_exc()
+        return e.action
+
+    try:
+        widget.drop_target_register(DND_FILES)
+        widget.dnd_bind('<<Drop>>', handler)
+    except Exception:
+        pass
+
+
+def path_row(parent, r, label, var, cmd, folder=True):
     ttk.Label(parent, text=label).grid(row=r, column=0, sticky='w', pady=4)
-    ttk.Entry(parent, textvariable=var).grid(row=r, column=1, sticky='ew', padx=6)
+    e = ttk.Entry(parent, textvariable=var)
+    e.grid(row=r, column=1, sticky='ew', padx=6)
     ttk.Button(parent, text='Обзор…', command=cmd).grid(row=r, column=2, sticky='ew')
+    # перетащили файл в поле папки — берём папку, где он лежит
+    on_drop(e, lambda ps: var.set(os.path.normpath(ps[0] if not folder or os.path.isdir(ps[0])
+                                                    else os.path.dirname(ps[0]))))
+    return e
 
 
 class FileList(ttk.Frame):
@@ -55,9 +100,49 @@ class FileList(ttk.Frame):
         for text, cmd in (extra or []):
             ttk.Button(btns, text=text, command=cmd).pack(fill='x')
         self.on_add = None
+        on_drop(self.box, self.add_paths)
+        if DND_OK and not self.paths:
+            self.box.insert('end', '  (перетащите файлы сюда или нажмите «Добавить…»)')
+            self.box.itemconfigure(0, foreground='#999')
+            self._hint = True
+
+    _hint = False
+
+    def _exts(self):
+        ext = set()
+        for _, pat in self.filetypes:
+            for x in pat.split():
+                if x in ('*.*', '*'):
+                    continue
+                ext.add(x.lstrip('*').lower())
+            break      # первая группа — «свои» типы файлов
+        return ext
+
+    def add_paths(self, ps):
+        """Перетащенные файлы и папки (из папки — файлы подходящих типов)."""
+        ext = self._exts()
+        files = []
+        for p in ps:
+            p = os.path.normpath(p)
+            if os.path.isdir(p):
+                files += sorted(os.path.join(p, f) for f in os.listdir(p)
+                                if os.path.splitext(f)[1].lower() in ext and not f.startswith('~$'))
+            elif os.path.isfile(p):
+                files.append(p)
+        skipped = [f for f in files if ext and os.path.splitext(f)[1].lower() not in ext]
+        files = [f for f in files if f not in skipped]
+        self._add(files)
+        if skipped:
+            messagebox.showwarning(APP_TITLE, 'Не добавлены (другой тип файла):\n' +
+                                   '\n'.join(os.path.basename(f) for f in skipped[:15]))
 
     def add(self):
-        ps = filedialog.askopenfilenames(title=self.title, filetypes=self.filetypes)
+        self._add(filedialog.askopenfilenames(title=self.title, filetypes=self.filetypes))
+
+    def _add(self, ps):
+        if ps and self._hint:
+            self.box.delete(0, 'end')
+            self._hint = False
         for p in ps:
             if p not in self.paths:
                 self.paths.append(p)
@@ -66,11 +151,15 @@ class FileList(ttk.Frame):
             self.on_add(ps)
 
     def remove(self):
+        if self._hint:
+            return
         for i in reversed(self.box.curselection()):
             self.box.delete(i)
             del self.paths[i]
 
     def refresh(self):
+        if self._hint:
+            return
         sel = self.box.curselection()
         self.box.delete(0, 'end')
         for p in self.paths:
@@ -107,8 +196,12 @@ class DocsScreen(ttk.Frame):
         self.prices = FileList(frm, 'Прайс-листы', PRICE_TYPES, height=3)
         self.prices.grid(row=2, column=1, columnspan=2, sticky='ew', padx=6, pady=4)
         ttk.Label(frm, text='4. Куда сохранить Excel:').grid(row=3, column=0, sticky='w', pady=4)
-        ttk.Entry(frm, textvariable=self.out).grid(row=3, column=1, sticky='ew', padx=6)
+        out_e = ttk.Entry(frm, textvariable=self.out)
+        out_e.grid(row=3, column=1, sticky='ew', padx=6)
         ttk.Button(frm, text='Обзор…', command=self.pick_out).grid(row=3, column=2, sticky='ew')
+        # перетащили папку — отчёт в неё, перетащили xlsx — в этот файл
+        on_drop(out_e, lambda ps: self.out.set(os.path.join(ps[0], 'documents_report.xlsx') if os.path.isdir(ps[0])
+                                               else os.path.normpath(ps[0])))
         ttk.Label(frm, foreground='#666',
                   text='Если добавить и документы, и заказы — в отчёте будет лист «Сверка с заказом»: '
                        'чего нет, что лишнее, где другое кол-во или цена.', wraplength=760, justify='left').grid(
@@ -201,7 +294,7 @@ class PhotosScreen(ttk.Frame):
             self.out.set(os.path.join(os.path.dirname(ps[0]), 'photos_result'))
 
     def toggle_brand(self):
-        sel = self.prices.box.curselection()
+        sel = [] if self.prices._hint else self.prices.box.curselection()
         if not sel:
             messagebox.showinfo(APP_TITLE, 'Выделите прайс в списке, потом нажмите «Сменить бренд».')
             return
@@ -289,6 +382,7 @@ class App(tk.Tk):
     def __init__(self):
         enable_dpi_awareness()
         super().__init__()
+        enable_dnd(self)
         self.title(APP_TITLE)
         try:   # иконка окна (в exe файл вшит рядом с программой)
             base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
