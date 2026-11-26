@@ -324,7 +324,7 @@ class App(tk.Tk):
                        '(Bohemia, Guzzini, Helios; несколько прайсов за один запуск)').pack(pady=(6, 0))
         bottom = ttk.Frame(f)
         bottom.pack(side='bottom', fill='x')
-        ttk.Label(bottom, text=f'Версия {updater.current_version()}', foreground='#777').pack(side='left')
+        ttk.Label(bottom, text=f'Версия {updater.current_version()}  ·  © Jooble Soft', foreground='#777').pack(side='left')
         self.upd_btn = ttk.Button(bottom, text='Проверить обновления', command=lambda: self.check_updates(True))
         self.upd_btn.pack(side='right')
         self.upd_label = ttk.Label(bottom, text='', foreground='#777')

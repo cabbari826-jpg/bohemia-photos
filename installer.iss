@@ -6,6 +6,13 @@
 [Setup]
 AppName=Bohemia Photos
 AppVersion={#AppVer}
+AppPublisher=Jooble Soft
+AppCopyright=© Jooble Soft
+VersionInfoCompany=Jooble Soft
+VersionInfoProductName=Bohemia Photos
+VersionInfoDescription=Установка Bohemia Photos
+VersionInfoVersion={#AppVer}
+UninstallDisplayName=Bohemia Photos (Jooble Soft)
 DefaultDirName={autopf}\Bohemia Photos
 DefaultGroupName=Bohemia Photos
 OutputDir=dist
