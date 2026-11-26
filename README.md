@@ -1,4 +1,4 @@
-# Bohemia Photos — программа с окном
+# Inventa — программа с окном (раньше Bohemia Photos)
 
 При запуске программа спрашивает, что нужно сделать:
 
@@ -19,10 +19,10 @@
 ## Как получить .exe
 **Вариант 1, GitHub (ничего не ставить на компьютер).** Загрузить эту папку в репозиторий на GitHub.
 Сборка запустится сама (Actions → Build Windows app), в результатах будут
-`BohemiaPhotos.exe` (запускается сразу) и `BohemiaPhotos-Setup.exe` (установщик с ярлыком).
+`Inventa.exe` (запускается сразу) и `Inventa-Setup.exe` (установщик с ярлыком).
 
 **Вариант 2, на своём Windows.** Поставить Python 3.12 с python.org (отметить «Add python.exe to PATH»),
-дважды щёлкнуть `build_exe.bat`. Готовый файл: `dist\BohemiaPhotos.exe`.
+дважды щёлкнуть `build_exe.bat`. Готовый файл: `dist\Inventa.exe`.
 
 ## Запуск без сборки
     pip install -r requirements.txt

@@ -1,8 +1,8 @@
 """Обновление программы из релизов GitHub.
 
-Установленная версия (через BohemiaPhotos-Setup.exe) скачивает новый установщик и запускает его
+Установленная версия (через Inventa-Setup.exe) скачивает новый установщик и запускает его
 в тихом режиме: он закрывает программу, ставит новую версию поверх и запускает её снова.
-Версия без установки (просто BohemiaPhotos.exe) открывает страницу релиза в браузере.
+Версия без установки (просто Inventa.exe) открывает страницу релиза в браузере.
 """
 import os
 import re
@@ -14,7 +14,8 @@ import urllib.request
 
 REPO = 'cabbari826-jpg/bohemia-photos'
 API = f'https://api.github.com/repos/{REPO}/releases/latest'
-SETUP_NAME = 'BohemiaPhotos-Setup.exe'
+SETUP_NAME = 'Inventa-Setup.exe'
+OLD_SETUP_NAME = 'BohemiaPhotos-Setup.exe'   # так установщик назывался до переименования
 
 
 def current_version():
@@ -42,10 +43,11 @@ def is_installed():
 def latest(timeout=10):
     """-> dict(version, setup_url, page, notes) последнего релиза или None."""
     req = urllib.request.Request(API, headers={'Accept': 'application/vnd.github+json',
-                                               'User-Agent': 'BohemiaPhotos-updater'})
+                                               'User-Agent': 'Inventa-updater'})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         d = json.load(r)
-    setup = next((a['browser_download_url'] for a in d.get('assets', []) if a.get('name') == SETUP_NAME), None)
+    assets = {a.get('name'): a['browser_download_url'] for a in d.get('assets', [])}
+    setup = assets.get(SETUP_NAME) or assets.get(OLD_SETUP_NAME)
     return dict(version=d.get('tag_name', '').lstrip('v'), setup_url=setup, page=d.get('html_url'),
                 notes=d.get('body') or '')
 
@@ -61,7 +63,7 @@ def check():
 def download(url, progress=None):
     """Скачивает установщик во временную папку, возвращает путь."""
     dest = os.path.join(tempfile.gettempdir(), SETUP_NAME)
-    req = urllib.request.Request(url, headers={'User-Agent': 'BohemiaPhotos-updater'})
+    req = urllib.request.Request(url, headers={'User-Agent': 'Inventa-updater'})
     with urllib.request.urlopen(req, timeout=60) as r, open(dest, 'wb') as f:
         total = int(r.headers.get('Content-Length') or 0)
         done = 0

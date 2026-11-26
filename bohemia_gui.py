@@ -17,7 +17,7 @@ import guzzini_photos
 import invoice_reader
 import updater
 
-APP_TITLE = 'Bohemia Photos — каталоги и документы'
+APP_TITLE = 'Inventa — каталоги и документы'
 BRANDS = {'bohemia': ('Bohemia', core), 'guzzini': ('Guzzini', guzzini_photos), 'helios': ('Helios', guzzini_photos)}
 PRICE_TYPES = [('Excel и PDF', '*.xlsx *.xls *.csv *.pdf *.PDF'), ('Все файлы', '*.*')]
 
