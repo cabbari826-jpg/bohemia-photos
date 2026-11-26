@@ -272,6 +272,11 @@ class App(tk.Tk):
         enable_dpi_awareness()
         super().__init__()
         self.title(APP_TITLE)
+        try:   # иконка окна (в exe файл вшит рядом с программой)
+            base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+            self.iconbitmap(default=os.path.join(base, 'app.ico'))
+        except Exception:
+            pass
         self.place_window()
         self.q = queue.Queue()
         self.worker = None
