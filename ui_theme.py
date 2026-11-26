@@ -1,5 +1,5 @@
 """Оформление Inventa в стиле сайта: бирюзовая шапка, светлый фон, скруглённые (squircle) карточки,
-поля и кнопки, шрифт Manrope, название — рукописным Pacifico.
+поля и кнопки, шрифт Manrope, название — рукописным Courgette.
 
 Скругления рисуются картинками (PIL, со сглаживанием) и подключаются как элементы темы ttk.
 Шрифты лежат в папке fonts (лицензия SIL OFL) и подключаются только для этой программы.
@@ -118,12 +118,12 @@ def apply(root):
     global S
     S = max(1.0, root.winfo_fpixels('1i') / 96)
     sans = _family(root, ['Manrope', 'Segoe UI', 'Inter', 'Arial'])
-    script = _family(root, ['Pacifico', 'Segoe Script', 'Brush Script MT'])
+    script = _family(root, ['Courgette', 'Segoe Script', 'Brush Script MT'])
     mono = _family(root, ['Cascadia Mono', 'Consolas', 'JetBrains Mono', 'DejaVu Sans Mono', 'Courier New'])
     F.update(
         body=(sans, 10), small=(sans, 9), bold=(sans, 10, 'bold'),
         h1=(sans, 21, 'bold'), h2=(sans, 16, 'bold'), h3=(sans, 12, 'bold'),
-        brand=(script, 18), eyebrow=(sans, 8, 'bold'), btn=(sans, 10, 'bold'),
+        brand=(script, 19), eyebrow=(sans, 8, 'bold'), btn=(sans, 10, 'bold'),
         big=(sans, 11, 'bold'), mono=(mono, 9), icon=(sans, 16),
     )
     for name in ('TkDefaultFont', 'TkTextFont', 'TkMenuFont'):
@@ -148,10 +148,10 @@ def apply(root):
     s.configure('Status.TLabel', background=PAPER, foreground=INK_SOFT, font=F['bold'])
 
     # карточки и поля
-    _elem(s, root, 'Card.bg', 16, CARD, PAPER, LINE)
-    _elem(s, root, 'CardHover.bg', 16, CARD, PAPER, TEAL_2)
-    _elem(s, root, 'Field.bg', 11, FIELD, CARD, LINE)
-    _elem(s, root, 'FieldP.bg', 11, FIELD, PAPER, LINE)
+    _elem(s, root, 'Card.bg', 26, CARD, PAPER, LINE)
+    _elem(s, root, 'CardHover.bg', 26, CARD, PAPER, TEAL_2)
+    _elem(s, root, 'Field.bg', 18, FIELD, CARD, LINE)
+    _elem(s, root, 'FieldP.bg', 18, FIELD, PAPER, LINE)
     for name, el, pad in (('Card.TFrame', 'Card.bg', _px(18)), ('CardHover.TFrame', 'CardHover.bg', _px(18)),
                           ('Field.TFrame', 'Field.bg', (_px(10), _px(6))),
                           ('FieldP.TFrame', 'FieldP.bg', (_px(12), _px(8)))):
@@ -160,18 +160,18 @@ def apply(root):
     s.configure('Card.TFrame', background=CARD)
     s.configure('CardHover.TFrame', background=CARD)
 
-    # кнопки: (стиль, фон снаружи, цвет, при наведении, рамка, текст, отступы, шрифт)
+    # кнопки-«пилюли»: (стиль, фон снаружи, цвет, при наведении, рамка, текст, отступы, шрифт, радиус)
     buttons = [
-        ('TButton', CARD, CARD, MIST, LINE, TEAL, (_px(14), _px(7)), F['btn']),
-        ('Paper.TButton', PAPER, CARD, MIST, LINE, TEAL, (_px(14), _px(7)), F['btn']),
-        ('Accent.TButton', PAPER, AMBER, AMBER_HOVER, None, AMBER_INK, (_px(22), _px(10)), F['big']),
-        ('AccentCard.TButton', CARD, AMBER, AMBER_HOVER, None, AMBER_INK, (_px(20), _px(9)), F['big']),
-        ('Ghost.TButton', TEAL, TEAL, TEAL_2, '#3d7f8f', '#e3f1f4', (_px(14), _px(6)), F['small']),
-        ('Back.TButton', PAPER, PAPER, MIST, None, TEAL, (_px(10), _px(6)), F['btn']),
+        ('TButton', CARD, CARD, MIST, LINE, TEAL, (_px(16), _px(9)), F['btn'], 17),
+        ('Paper.TButton', PAPER, CARD, MIST, LINE, TEAL, (_px(18), _px(10)), F['btn'], 18),
+        ('Accent.TButton', PAPER, AMBER, AMBER_HOVER, None, AMBER_INK, (_px(26), _px(12)), F['big'], 21),
+        ('AccentCard.TButton', CARD, AMBER, AMBER_HOVER, None, AMBER_INK, (_px(24), _px(11)), F['big'], 20),
+        ('Ghost.TButton', TEAL, TEAL, TEAL_2, '#3d7f8f', '#e3f1f4', (_px(16), _px(8)), F['small'], 15),
+        ('Back.TButton', PAPER, PAPER, MIST, None, TEAL, (_px(12), _px(8)), F['btn'], 16),
     ]
-    for name, outer, fill, hover, border, fg, pad, fnt in buttons:
+    for name, outer, fill, hover, border, fg, pad, fnt, rad in buttons:
         el = name.replace('.', '_') + '.bg'
-        _elem(s, root, el, 10, fill, outer, border,
+        _elem(s, root, el, rad, fill, outer, border,
               states=[('disabled', '#edf2f4', '#e1e9ec'), ('pressed', hover, border or hover),
                       ('active', hover, border or hover)])
         s.layout(name, [(el, {'sticky': 'nsew', 'children': [
@@ -180,10 +180,10 @@ def apply(root):
         s.map(name, foreground=[('disabled', '#9fb2b8')])
 
     # поле ввода
-    _elem(s, root, 'REntry.field', 10, FIELD, CARD, LINE, states=[('focus', FIELD, TEAL_2)])
+    _elem(s, root, 'REntry.field', 16, FIELD, CARD, LINE, states=[('focus', FIELD, TEAL_2)])
     s.layout('TEntry', [('REntry.field', {'sticky': 'nsew', 'children': [
         ('Entry.padding', {'sticky': 'nsew', 'children': [('Entry.textarea', {'sticky': 'nsew'})]})]})])
-    s.configure('TEntry', padding=(_px(10), _px(7)), foreground=INK, fieldbackground=FIELD)
+    s.configure('TEntry', padding=(_px(14), _px(9)), foreground=INK, fieldbackground=FIELD)
 
     # полоса прогресса: скруглённые дорожка и заливка
     h = _px(10)
@@ -214,7 +214,7 @@ def badge(parent, text, bg=TEAL, fg='#ffffff', size=24, parent_bg=CARD):
 def icon_tile(parent, text, size=46, parent_bg=CARD):
     """Скруглённая плашка с иконкой (на карточках задач)."""
     size = _px(size)
-    p = _photo(parent, round_image(size, size, _px(13), MIST, parent_bg))
+    p = _photo(parent, round_image(size, size, _px(17), MIST, parent_bg))
     return tk.Label(parent, image=p, text=text, compound='center', fg=TEAL, bg=parent_bg, font=F['icon'], bd=0)
 
 
@@ -233,7 +233,7 @@ def bullet(parent, text, bg=CARD):
 
 def listbox(parent, **kw):
     """-> (скруглённая рамка, список)."""
-    fr = ttk.Frame(parent, style='Field.TFrame', padding=(_px(12), _px(8)))
+    fr = ttk.Frame(parent, style='Field.TFrame', padding=(_px(16), _px(10)))
     lb = tk.Listbox(fr, bg=FIELD, fg=INK, selectbackground='#cfe7ec', selectforeground=INK,
                     highlightthickness=0, relief='flat', bd=0, activestyle='none', font=F['body'], **kw)
     lb.pack(fill='both', expand=True)

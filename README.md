@@ -38,4 +38,4 @@
 
 
 ## Шрифты
-В папке `fonts`: Manrope (© The Manrope Project Authors) и Pacifico (© The Pacifico Project Authors), обе под лицензией SIL Open Font License 1.1 (тексты лицензий рядом).
+В папке `fonts`: Manrope (© The Manrope Project Authors) и Courgette (© Sorkin Type Co), обе под лицензией SIL Open Font License 1.1 (тексты лицензий рядом).

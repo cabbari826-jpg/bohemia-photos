@@ -109,14 +109,14 @@ class FileList(ttk.Frame):
         fr.grid(row=0, column=0, sticky='ew')
         btns = ttk.Frame(self, style='Flat.TFrame')
         btns.grid(row=0, column=1, sticky='n', padx=(8, 0))
-        ttk.Button(btns, text='+  Добавить…', command=self.add).pack(fill='x')
-        ttk.Button(btns, text='Убрать', command=self.remove).pack(fill='x', pady=4)
-        for text, cmd in (extra or []):
-            ttk.Button(btns, text=text, command=cmd).pack(fill='x')
+        ttk.Button(btns, text='+  Добавить…', command=self.add).grid(row=0, column=0, sticky='ew')
+        ttk.Button(btns, text='Убрать', command=self.remove).grid(row=0, column=1, sticky='ew', padx=(6, 0))
+        for k, (text, cmd) in enumerate(extra or []):
+            ttk.Button(btns, text=text, command=cmd).grid(row=k + 1, column=0, columnspan=2, sticky='ew', pady=(6, 0))
         self.on_add = None
         on_drop(self.box, self.add_paths)
         if DND_OK and not self.paths:
-            self.box.insert('end', '↓  перетащите файлы сюда или нажмите «Добавить…»')
+            self.box.insert('end', '↓  перетащите файлы сюда')
             self.box.itemconfigure(0, foreground=ui.MUTED)
             self._hint = True
 
@@ -191,7 +191,7 @@ class DocsScreen(ttk.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.out = tk.StringVar()
-        box = ui.card(self, padding=(22, 12, 22, 14))
+        box = ui.card(self, padding=(26, 16, 26, 18))
         box.pack(fill='x')
         frm = ttk.Frame(box, style='Flat.TFrame')
         frm.pack(fill='x')
@@ -203,11 +203,11 @@ class DocsScreen(ttk.Frame):
         self.docs.on_add = self._suggest_out
         step(frm, 1, 2, 'Наши заказы поставщику', 'Excel, необязательно')
         self.orders = FileList(frm, 'Заказы поставщику', [('Excel', '*.xlsx *.xls *.csv'), ('Все файлы', '*.*')],
-                               height=3)
+                               height=2)
         self.orders.grid(row=1, column=1, columnspan=2, sticky='ew', pady=6)
         self.orders.on_add = self._suggest_out
         step(frm, 2, 3, 'Прайсы для сверки', 'необязательно, можно несколько')
-        self.prices = FileList(frm, 'Прайс-листы', PRICE_TYPES, height=3)
+        self.prices = FileList(frm, 'Прайс-листы', PRICE_TYPES, height=2)
         self.prices.grid(row=2, column=1, columnspan=2, sticky='ew', pady=6)
         out_e = path_row(frm, 3, 4, 'Куда сохранить Excel', self.out, self.pick_out, folder=False)
         # перетащили папку — отчёт в неё, перетащили xlsx — в этот файл
@@ -273,7 +273,7 @@ class PhotosScreen(ttk.Frame):
         super().__init__(master)
         self.brand = {}
         self.catalogs, self.existing, self.out = tk.StringVar(), tk.StringVar(), tk.StringVar()
-        box = ui.card(self, padding=(22, 12, 22, 14))
+        box = ui.card(self, padding=(26, 16, 26, 18))
         box.pack(fill='x')
         frm = ttk.Frame(box, style='Flat.TFrame')
         frm.pack(fill='x')
@@ -477,7 +477,7 @@ class App(tk.Tk):
         row.pack(fill='both', expand=True)
         for col, (key, icon, title, desc, points) in enumerate(self.TASKS):
             row.columnconfigure(col, weight=1, uniform='task')
-            c = ui.card(row, padding=(24, 22, 24, 22), cursor='hand2')
+            c = ui.card(row, padding=(28, 26, 28, 26), cursor='hand2')
             c.grid(row=0, column=col, sticky='nsew', padx=(0 if col == 0 else 8, 8 if col == 0 else 0))
             ic = ui.icon_tile(c, icon)
             ic.pack(anchor='w')
@@ -603,7 +603,7 @@ class App(tk.Tk):
         self.status.pack(side='right')
         self.pb = ttk.Progressbar(f, mode='determinate', maximum=100)
         self.pb.pack(fill='x')
-        lc = ttk.Frame(f, style='FieldP.TFrame', padding=(14, 10))
+        lc = ttk.Frame(f, style='FieldP.TFrame', padding=(18, 12))
         lc.pack(fill='both', expand=True, pady=(12, 0))
         self.log = tk.Text(lc, height=8, wrap='word', state='disabled', bg=ui.FIELD, fg=ui.INK_SOFT,
                            font=ui.F['mono'], relief='flat', bd=0, padx=4, pady=4, highlightthickness=0)
