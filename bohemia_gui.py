@@ -510,6 +510,7 @@ class App(tk.Tk):
         self.current = None
         self.show_home()
         self.after(100, self.poll)
+        self.after(400, self._prebuild)        # экраны задач строим заранее, пока пользователь смотрит на главный
         if getattr(sys, 'frozen', False):
             self.after(300, self.after_update)
             self.after(1500, self.check_updates)    # тихая проверка при запуске собранной программы
@@ -716,6 +717,16 @@ class App(tk.Tk):
         self.log.pack(fill='both', expand=True)
         self.built = {}
         return f
+
+    def _prebuild(self, keys=None):
+        """Строит экраны задач в фоне по одному (не показывая), чтобы переход на них был мгновенным."""
+        keys = list(self.screens) if keys is None else keys
+        while keys and keys[0] in self.built:
+            keys.pop(0)
+        if not keys:
+            return
+        self.built[keys[0]] = self.screens[keys[0]](self.body)
+        self.after(50, self._prebuild, keys[1:])
 
     def show_home(self):
         if self.worker and self.worker.is_alive():

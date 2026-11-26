@@ -84,14 +84,20 @@ class Spring:
 def _call(fn):
     try:
         fn()
-    except tk.TclError:
+    except Exception:          # ошибка одного виджета не должна останавливать остальные
         pass
 
 
 def _start(widget):
     if _loop[0] is None:
         root = widget._root()
-        _loop[0] = root.after(FRAME_MS, _frame, root)
+        _loop[0] = root.after(FRAME_MS, _when_idle, root)
+
+
+def _when_idle(root):
+    # кадр анимации — только после того, как Tk дорисовал окно (иначе на медленном компьютере
+    # таймеры анимации забивают очередь и элементы экрана появляются с задержкой)
+    _loop[0] = root.after_idle(_frame, root)
 
 
 def _frame(root):
@@ -109,7 +115,7 @@ def _frame(root):
     for fn in steps:
         _call(fn)
     if _active:
-        _loop[0] = root.after(FRAME_MS, _frame, root)
+        _loop[0] = root.after(FRAME_MS, _when_idle, root)
 
 
 def set_enabled(on):
@@ -137,8 +143,10 @@ def photo(widget, w, h, r, fill, outer, border=None, bw=1.0, inset=0.0):
     return p
 
 
-def shape(w, h, r, fill, outer, border=None, bw=1.0, inset=0.0, k=3):
+def shape(w, h, r, fill, outer, border=None, bw=1.0, inset=0.0, k=None):
     """Скруглённая плашка w×h (с отступом inset от краёв) на фоне outer; результат кешируется."""
+    if k is None:
+        k = 3 if w * h < 30000 else 2      # большие поля сглаживаем чуть проще — в разы быстрее
     key = (w, h, round(r, 2), fill, outer, border, round(bw, 2), round(inset, 2))
     img = _cache.get(key)
     if img is None:
