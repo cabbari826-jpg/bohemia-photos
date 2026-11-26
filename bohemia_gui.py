@@ -17,6 +17,8 @@ import guzzini_photos
 import invoice_reader
 import updater
 import ui_theme as ui
+import motion
+from motion import MotionButton
 
 APP_TITLE = 'Inventa — каталоги и документы'
 BRANDS = {'bohemia': ('Bohemia', core), 'guzzini': ('Guzzini', guzzini_photos), 'helios': ('Helios', guzzini_photos)}
@@ -53,25 +55,57 @@ def enable_dnd(root):
         DND_OK = False
 
 
-def on_drop(widget, callback):
-    """callback(список путей) при перетаскивании файлов/папок на виджет."""
+def drop_weight(paths):
+    """Сколько весят перетащенные файлы (папка — сумма файлов в ней, без вложенных)."""
+    total = 0
+    for p in paths:
+        try:
+            if os.path.isdir(p):
+                total += sum(os.path.getsize(os.path.join(p, f)) for f in os.listdir(p)
+                             if os.path.isfile(os.path.join(p, f)))
+            else:
+                total += os.path.getsize(p)
+        except OSError:
+            pass
+    return total
+
+
+def on_drop(widget, callback, field=None):
+    """callback(список путей) при перетаскивании файлов/папок на виджет; field — поле, которое
+    подсвечивается, пока файлы над ним, и «подпрыгивает» при сбросе."""
     if not DND_OK:
         return
 
     def handler(e):
         try:
             paths = [p for p in widget.tk.splitlist(e.data) if p]
+            if field is not None:
+                field.dropped(drop_weight(paths))
             if paths:
                 callback(paths)
         except Exception:
             traceback.print_exc()
         return e.action
 
-    try:
-        widget.drop_target_register(DND_FILES)
-        widget.dnd_bind('<<Drop>>', handler)
-    except Exception:
-        pass
+    def enter(e):
+        if field is not None:
+            field.drag_over(True)
+        return e.action
+
+    def leave(e):
+        if field is not None:
+            field.drag_over(False)
+        return e.action
+
+    targets = [widget] + ([field] if field is not None and field is not widget else [])
+    for w in targets:
+        try:
+            w.drop_target_register(DND_FILES)
+            w.dnd_bind('<<Drop>>', handler)
+            w.dnd_bind('<<DropEnter>>', enter)
+            w.dnd_bind('<<DropLeave>>', leave)
+        except Exception:
+            pass
 
 
 def step(parent, r, num, title, hint=''):
@@ -87,15 +121,38 @@ def step(parent, r, num, title, hint=''):
     return cell
 
 
+BTN_W, BTN_H, FIELD_H = 128, 44, 52      # одинаковые размеры кнопок и полей на всех экранах
+
+
+def button_pair(parent, first, second, extra=()):
+    """Две кнопки одинакового размера в ряд (+ дополнительные ниже)."""
+    f = tk.Frame(parent, bg=ui.CARD)
+    for k, (text, cmd) in enumerate((first, second)):
+        MotionButton(f, text=text, command=cmd, width=BTN_W, height=BTN_H).grid(row=0, column=k)
+    for k, (text, cmd) in enumerate(extra):
+        MotionButton(f, text=text, command=cmd, width=BTN_W, height=BTN_H).grid(row=k + 1, column=0)
+    return f
+
+
 def path_row(parent, r, num, label, var, cmd, folder=True, hint=''):
     step(parent, r, num, label, hint)
-    e = ttk.Entry(parent, textvariable=var)
-    e.grid(row=r, column=1, sticky='ew', pady=(8, 6))
-    ttk.Button(parent, text='Обзор…', command=cmd).grid(row=r, column=2, sticky='new', padx=(8, 0), pady=(6, 6))
+    fld = motion.entry_field(parent, var, height=FIELD_H)
+    fld.grid(row=r, column=1, sticky='new', pady=(4, 4))
+
+    def open_it():
+        p = var.get().strip()
+        if p and not os.path.isdir(p):
+            p = os.path.dirname(p)
+        if p and os.path.isdir(p):
+            open_path(p)
+        else:
+            messagebox.showinfo(APP_TITLE, 'Сначала выберите папку.')
+    button_pair(parent, ('Обзор…', cmd), ('Открыть', open_it)).grid(row=r, column=2, sticky='ne', padx=(6, 0),
+                                                                   pady=(4, 4))
     # перетащили файл в поле папки — берём папку, где он лежит
-    on_drop(e, lambda ps: var.set(os.path.normpath(ps[0] if not folder or os.path.isdir(ps[0])
-                                                    else os.path.dirname(ps[0]))))
-    return e
+    on_drop(fld.inner, lambda ps: var.set(os.path.normpath(ps[0] if not folder or os.path.isdir(ps[0])
+                                                           else os.path.dirname(ps[0]))), field=fld)
+    return fld
 
 
 class FileList(ttk.Frame):
@@ -105,16 +162,13 @@ class FileList(ttk.Frame):
         super().__init__(master, style='Flat.TFrame')
         self.paths, self.title, self.filetypes, self.label = [], title, filetypes, label
         self.columnconfigure(0, weight=1)
-        fr, self.box = ui.listbox(self, height=height, selectmode='extended')
-        fr.grid(row=0, column=0, sticky='ew')
-        btns = ttk.Frame(self, style='Flat.TFrame')
-        btns.grid(row=0, column=1, sticky='n', padx=(8, 0))
-        ttk.Button(btns, text='+  Добавить…', command=self.add).grid(row=0, column=0, sticky='ew')
-        ttk.Button(btns, text='Убрать', command=self.remove).grid(row=0, column=1, sticky='ew', padx=(6, 0))
-        for k, (text, cmd) in enumerate(extra or []):
-            ttk.Button(btns, text=text, command=cmd).grid(row=k + 1, column=0, columnspan=2, sticky='ew', pady=(6, 0))
+        self.field = motion.list_field(self, rows=height, selectmode='extended')
+        self.field.grid(row=0, column=0, sticky='new')
+        self.box = self.field.inner
+        button_pair(self, ('+  Добавить…', self.add), ('Убрать', self.remove), extra or ()).grid(
+            row=0, column=1, sticky='n', padx=(6, 0))
         self.on_add = None
-        on_drop(self.box, self.add_paths)
+        on_drop(self.box, self.add_paths, field=self.field)
         if DND_OK and not self.paths:
             self.box.insert('end', '↓  перетащите файлы сюда')
             self.box.itemconfigure(0, foreground=ui.MUTED)
@@ -157,10 +211,15 @@ class FileList(ttk.Frame):
         if ps and self._hint:
             self.box.delete(0, 'end')
             self._hint = False
+        new = []
         for p in ps:
             if p not in self.paths:
                 self.paths.append(p)
                 self.box.insert('end', self.label(p))
+                new.append(len(self.paths) - 1)
+        if new:
+            self.box.see(new[-1])
+            motion.flash_items(self.box, new)
         if ps and self.on_add:
             self.on_add(ps)
 
@@ -211,8 +270,9 @@ class DocsScreen(ttk.Frame):
         self.prices.grid(row=2, column=1, columnspan=2, sticky='ew', pady=6)
         out_e = path_row(frm, 3, 4, 'Куда сохранить Excel', self.out, self.pick_out, folder=False)
         # перетащили папку — отчёт в неё, перетащили xlsx — в этот файл
-        on_drop(out_e, lambda ps: self.out.set(os.path.join(ps[0], 'documents_report.xlsx') if os.path.isdir(ps[0])
-                                               else os.path.normpath(ps[0])))
+        on_drop(out_e.inner, lambda ps: self.out.set(os.path.join(ps[0], 'documents_report.xlsx')
+                                                     if os.path.isdir(ps[0]) else os.path.normpath(ps[0])),
+                field=out_e)
         ttk.Label(self, style='Muted.TLabel',
                   text='Если добавить и документы, и заказы — в отчёте будет лист «Сверка с заказом»: '
                        'чего нет, что лишнее, где другое кол-во или цена.', wraplength=820, justify='left').pack(
@@ -449,8 +509,8 @@ class App(tk.Tk):
         tk.Label(h, text='Inventa', bg=ui.TEAL, fg='#ffffff', font=ui.F['brand']).pack(side='left', pady=(0, 6))
         tk.Label(h, text='by Jooble Soft', bg=ui.TEAL, fg='#9cc3cc', font=ui.F['small']).pack(
             side='left', padx=(10, 0), pady=(8, 0))
-        self.upd_btn = ttk.Button(h, text='Проверить обновления', style='Ghost.TButton', cursor='hand2',
-                                  command=lambda: self.check_updates(True))
+        self.upd_btn = MotionButton(h, text='Проверить обновления', kind='ghost', width=176, height=34, bg=ui.TEAL,
+                                    command=lambda: self.check_updates(True))
         self.upd_btn.pack(side='right', padx=(0, 18))
         tk.Label(h, text=f'версия {updater.current_version()}', bg=ui.TEAL, fg='#9cc3cc',
                  font=ui.F['small']).pack(side='right', padx=(0, 12))
@@ -489,16 +549,16 @@ class App(tk.Tk):
             tk.Frame(c, bg=ui.LINE, height=1).pack(fill='x', pady=12)
             for ptxt in points:
                 ui.bullet(c, ptxt).pack(anchor='w', fill='x', pady=2)
-            ttk.Button(c, text='Открыть  →', style='AccentCard.TButton', cursor='hand2',
-                       command=lambda k=key: self.show(k)).pack(anchor='w', pady=(16, 0))
+            MotionButton(c, text='Открыть  →', kind='accent', width=160, height=46, bg=ui.CARD,
+                         command=lambda k=key: self.show(k)).pack(anchor='w', pady=(14, 0))
             # вся карточка кликабельна; при наведении — бирюзовая рамка
             for w in [c] + list(c.winfo_children()):
                 if isinstance(w, (tk.Label, ttk.Frame)) or w is c:
                     w.bind('<Button-1>', lambda e, k=key: self.show(k))
-            c.bind('<Enter>', lambda e, c=c: c.configure(style='CardHover.TFrame'))
-            c.bind('<Leave>', lambda e, c=c: c.configure(
-                style='CardHover.TFrame' if str(c.winfo_containing(e.x_root, e.y_root) or '').startswith(str(c))
-                else 'Card.TFrame'))
+            hv = motion.CardHover(c, [f'CardH{i}.TFrame' for i in range(8)])
+            c.bind('<Enter>', lambda e, hv=hv: hv.set(True))
+            c.bind('<Leave>', lambda e, c=c, hv=hv: hv.set(
+                str(c.winfo_containing(e.x_root, e.y_root) or '').startswith(str(c))))
             c.bind('<Configure>', lambda e, d=d: d.configure(wraplength=max(200, e.width - 60)))
         return f
 
@@ -584,7 +644,8 @@ class App(tk.Tk):
         f = ttk.Frame(self.container, padding=(28, 14, 28, 16))
         top = ttk.Frame(f)
         top.pack(fill='x')
-        self.back_btn = ttk.Button(top, text='←  Все задачи', style='Back.TButton', command=self.show_home)
+        self.back_btn = MotionButton(top, text='←  Все задачи', kind='back', width=150, height=36, bg=ui.PAPER,
+                                     command=self.show_home)
         self.back_btn.pack(anchor='w')
         self.eyebrow = ttk.Label(f, text='', style='Eyebrow.TLabel')
         self.eyebrow.pack(anchor='w', pady=(8, 0))
@@ -594,10 +655,11 @@ class App(tk.Tk):
         self.body.pack(fill='x')
         bar = ttk.Frame(f)
         bar.pack(fill='x', pady=(14, 10))
-        self.btn = ttk.Button(bar, text='Запустить', style='Accent.TButton', command=self.start, cursor='hand2')
+        self.btn = MotionButton(bar, text='Запустить', kind='accent', width=210, height=50, bg=ui.PAPER,
+                                command=self.start)
         self.btn.pack(side='left')
-        self.open_btn = ttk.Button(bar, text='Открыть результат', style='Paper.TButton', command=self.open_out,
-                                   state='disabled')
+        self.open_btn = MotionButton(bar, text='Открыть результат', width=210, height=50, bg=ui.PAPER,
+                                     command=self.open_out, state='disabled')
         self.open_btn.pack(side='left', padx=10)
         self.status = ttk.Label(bar, text='', style='Status.TLabel')
         self.status.pack(side='right')

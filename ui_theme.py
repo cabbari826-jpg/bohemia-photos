@@ -157,6 +157,16 @@ def apply(root):
                           ('FieldP.TFrame', 'FieldP.bg', (_px(12), _px(8)))):
         s.layout(name, [(el, {'sticky': 'nsew'})])
         s.configure(name, padding=pad, background=CARD if 'Field' not in name else FIELD)
+    # промежуточные рамки для плавной подсветки карточки при наведении
+    def _mix(a, b, t):
+        a, b = a.lstrip('#'), b.lstrip('#')
+        return '#%02x%02x%02x' % tuple(round(int(a[i:i + 2], 16) + (int(b[i:i + 2], 16) - int(a[i:i + 2], 16)) * t)
+                                       for i in (0, 2, 4))
+    for i in range(8):
+        el = f'CardH{i}.bg'
+        _elem(s, root, el, 26, CARD, PAPER, _mix(LINE, TEAL_2, i / 7))
+        s.layout(f'CardH{i}.TFrame', [(el, {'sticky': 'nsew'})])
+        s.configure(f'CardH{i}.TFrame', background=CARD)
     s.configure('Card.TFrame', background=CARD)
     s.configure('CardHover.TFrame', background=CARD)
 
