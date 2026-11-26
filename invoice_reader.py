@@ -571,6 +571,47 @@ def header_currency(title):
     return ''
 
 
+def read_pdf_price(path, log=print):
+    """PDF-прайс (таблица «код / название / … / цена» без количества) -> строки как у листа Excel:
+    первая строка — заголовки, дальше по строке на товар. Заголовок ищется на каждой странице."""
+    import pymupdf
+    doc = pymupdf.open(path)
+    head = ['Item No.', 'Description', 'Size', 'PU', 'Price EUR']
+    out = [tuple(head)]
+    cur = None
+    for page in doc:
+        lines = page_lines(page)
+        h = find_header(lines)
+        start = 0
+        if h:
+            start, cols = h[0] + 1, h[1]
+            cur = cols
+        if not cur:
+            continue
+        roles = [c['role'] for c in cur]
+        if 'code' not in roles or not ({'price', 'total'} & set(roles)):
+            continue
+        pcol = 'price' if 'price' in roles else 'total'
+        extra = [r for r in roles if r not in ('code', 'desc', pcol)]
+        for ln in lines[start:]:
+            if STOP_RE.search(ln['text']) and not re.search(r'\d', ln['words'][0][4]):
+                continue
+            row = assign(ln['words'], cur)
+            code = (row.get('code') or '').strip()
+            pr = row.get(pcol) or ''
+            m = re.search(r'-?\d[\d.\s\u00a0]*,\d{1,4}|-?\d[\d,\s\u00a0]*\.\d{1,4}|^\d+$', pr.replace('€', '').strip())
+            if not code or not m or not re.search(r'\d', code) or len(code) > 30:
+                continue
+            val = parse_num(m.group(0).strip(), ',' if ',' in m.group(0) and '.' not in m.group(0) else '.')
+            if val is None:
+                continue
+            ex = [row.get(r, '') for r in extra][:2]
+            ex += [''] * (2 - len(ex))
+            out.append((code, (row.get('desc') or '').strip(), ex[0], ex[1], val))
+    log(f'  PDF-прайс «{os.path.basename(path)}»: строк с ценой {len(out) - 1}')
+    return out
+
+
 class PriceList:
     """Прайс: индекс кодов (точный, короткий Bohemia, по началу кода для Guzzini) и цены."""
 
@@ -606,6 +647,8 @@ class PriceList:
     @staticmethod
     def _sheets(path):
         """Все листы .xlsx (в прайсах Guzzini товары разложены по листам), иначе первый лист."""
+        if path.lower().endswith('.pdf'):
+            return [('', read_pdf_price(path, log=lambda *a: None))]
         if path.lower().endswith(('.xlsx', '.xlsm')):
             try:
                 import openpyxl
@@ -644,7 +687,10 @@ class PriceList:
                     continue
                 if isinstance(v, float) and v.is_integer():
                     v = int(v)
-                s = str(v).strip().split()[0] if str(v).strip() else ''
+                s = str(v).strip()
+                # «STO 0141», «EGL 7004» (запчасти Helios) — код целиком; иначе первое слово
+                if not re.match(r'^[A-Za-z]{1,4}\s+\d[\w./-]*$', s):
+                    s = s.split()[0] if s else ''
                 if s and not s.startswith('='):
                     codes.append(s)
             if not codes:
@@ -687,6 +733,10 @@ class PriceList:
         sc = core.short_code(core.clean_code(code))
         if sc and core.code_key(sc) in self.index:
             return self.index[core.code_key(sc)], 'по короткому коду'
+        base = re.match(r'^\s*([A-Za-z]{0,4}\s?\d{3,})(?:-\w{1,4})+\s*$', str(code))
+        if base and core.code_key(base.group(1)) in self.index:
+            # 2941-001 (код с цветом) -> 2941 в прайсе (Helios)
+            return self.index[core.code_key(base.group(1))], 'по коду без цвета'
         if len(k) >= 5:
             # код документа — начало кода прайса (1793.00 -> 179300156)
             j = bisect.bisect_left(self.keys, k)

@@ -18,8 +18,8 @@ import invoice_reader
 import updater
 
 APP_TITLE = 'Bohemia Photos — каталоги и документы'
-BRANDS = {'bohemia': ('Bohemia', core), 'guzzini': ('Guzzini', guzzini_photos)}
-PRICE_TYPES = [('Excel', '*.xlsx *.xls *.csv'), ('Все файлы', '*.*')]
+BRANDS = {'bohemia': ('Bohemia', core), 'guzzini': ('Guzzini', guzzini_photos), 'helios': ('Helios', guzzini_photos)}
+PRICE_TYPES = [('Excel и PDF', '*.xlsx *.xls *.csv *.pdf *.PDF'), ('Все файлы', '*.*')]
 
 
 def open_path(p):
@@ -189,7 +189,8 @@ class PhotosScreen(ttk.Frame):
             return
         for i in sel:
             p = self.prices.paths[i]
-            self.brand[p] = 'guzzini' if self.brand.get(p) == 'bohemia' else 'bohemia'
+            order = list(BRANDS)
+            self.brand[p] = order[(order.index(self.brand.get(p, 'bohemia')) + 1) % len(order)]
         self.prices.refresh()
 
     def pick_catalogs(self):
@@ -320,7 +321,7 @@ class App(tk.Tk):
                    command=lambda: self.show('photos')).pack(fill='x', padx=60)
         ttk.Label(f, foreground='#555', justify='center',
                   text='Вырезать фото товаров из PDF-каталогов по кодам из прайс-листов\n'
-                       '(Bohemia, Guzzini; несколько прайсов за один запуск)').pack(pady=(6, 0))
+                       '(Bohemia, Guzzini, Helios; несколько прайсов за один запуск)').pack(pady=(6, 0))
         bottom = ttk.Frame(f)
         bottom.pack(side='bottom', fill='x')
         ttk.Label(bottom, text=f'Версия {updater.current_version()}', foreground='#777').pack(side='left')

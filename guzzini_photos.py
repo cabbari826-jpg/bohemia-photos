@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Guzzini: фото товаров из PDF-каталогов и журналов по кодам из прайс-листа.
+Guzzini и Helios: фото товаров из PDF-каталогов и журналов по кодам из прайс-листа.
+Каталоги-таблицы «код — EAN» (Helios) разбирает table_catalog.py.
 
 Запуск:
     python guzzini_photos.py ПРАЙС.xlsx ПАПКА_С_КАТАЛОГАМИ [ПАПКА_РЕЗУЛЬТАТА] [ПАПКА_ИМЕЮЩИХСЯ_ФОТО]
@@ -29,6 +30,7 @@ import openpyxl
 from PIL import Image
 
 import bohemia_photos as core
+import table_catalog
 
 BASE_RE = re.compile(r'^(\d{4})\.(\d{2})$|^(\d{6})$|^(\d{8,9})$|^(\d{6}[A-Z]{2}\d{2})$')
 COLOR_RE = re.compile(r'^\d{2,3}$')
@@ -150,6 +152,9 @@ def caption_block(words, cw):
 
 def page_items(page):
     """Товары на странице: базовый код, подпись, фото товара и фото по цветам."""
+    if table_catalog.is_table_page(page):
+        # каталог с таблицей «код — EAN» (Helios)
+        return table_catalog.page_items(page, page_images)
     words = [w for w in page.get_text('words') if w[4].strip()]
     imgs = page_images(page)
     codes = []
@@ -291,14 +296,18 @@ def build_index(folder, log=print, progress=None):
 
 
 # ---------------------------------------------------------------- прайс
-ITEM_HEAD = re.compile(r'^(item|code|codice|cod\.?|article|articolo|артикул|код|item\s*code|ref\.?)$', re.I)
-DESC_HEAD = re.compile(r'desc|наимен|описан|\bname\b|designation', re.I)
+ITEM_HEAD = re.compile(r'^(item|code|codice|cod\.?|article|articolo|артикул|код|item\s*code|ref\.?|item\s*no\.?|'
+                       r'referenz\s*(no|nr)\.?|reference\s*no\.?|artikel\s*(no|nr)\.?)$', re.I)
+DESC_HEAD = re.compile(r'desc|наимен|описан|\bname\b|designation|bezeichnung', re.I)
 
 
 def read_price_all(path, log=print):
     """Все листы прайса: [(лист, № строки, код, описание, цвет, есть фото в прайсе)]."""
     name = os.path.basename(path)
-    if not name.lower().endswith(('.xlsx', '.xlsm')):
+    if name.lower().endswith('.pdf'):
+        import invoice_reader
+        sheets = [('', invoice_reader.read_pdf_price(path, log=lambda *a: None), set())]
+    elif not name.lower().endswith(('.xlsx', '.xlsm')):
         rows, had = core.read_price(path)
         sheets = [('', rows, had)]
     else:
@@ -337,7 +346,9 @@ def read_price_all(path, log=print):
                 continue
             if isinstance(v, float) and v.is_integer():
                 v = int(v)
-            code = str(v).strip().split()[0]
+            code = str(v).strip()
+            if not re.match(r'^[A-Za-z]{1,4}\s+\d[\w./-]*$', code):     # «STO 0141» — код целиком
+                code = code.split()[0]
             if not re.search(r'\d{4}', code):
                 continue
             desc = str(row[dc] or '').strip() if dc is not None and dc < len(row) else ''
@@ -358,6 +369,9 @@ def match(code, index):
     for n in range(min(len(k) - 1, 9), 5, -1):
         if k[:n] in index:
             return [(it, k[n:]) for it in index[k[:n]]], 'по началу кода'
+    m = re.match(r'^\s*(\d{4})-(\w[\w-]*)\s*$', str(code))      # Helios: 2941-777 -> модель 2941
+    if m and m.group(1) in index:
+        return [(it, core.code_key(m.group(2))) for it in index[m.group(1)]], 'по коду модели'
     return [], ''
 
 
@@ -408,13 +422,21 @@ def crop(file, page_no, photo, docs):
 BOHEMIA_CODE = re.compile(r'^[0-9A-Z]{3}/[0-9A-Z]{4,5}/')
 
 
+HELIOS_CODE = re.compile(r'^\d{4}-\w{3}$')
+
+
 def detect_brand(path):
-    """'bohemia' или 'guzzini' по кодам в прайсе (91L/1SI97/… — Bohemia, цифровые коды — Guzzini и др.)."""
+    """'bohemia', 'guzzini' или 'helios' по имени файла и кодам в прайсе
+    (91L/1SI97/… — Bohemia, 2941-001 и штрихкоды 4006657… — Helios, остальное — Guzzini и др.)."""
     name = os.path.basename(path).lower()
-    for key in ('bohemia', 'guzzini'):
+    for key in ('bohemia', 'guzzini', 'helios'):
         if key in name:
             return key
     try:
+        if name.endswith('.pdf'):
+            doc = pymupdf.open(path)
+            text = ' '.join(doc[i].get_text() for i in list(range(min(len(doc), 3))) + [len(doc) - 1]).lower()
+            return 'helios' if 'helios' in text else 'guzzini'
         if name.endswith(('.xlsx', '.xlsm')):
             wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
             rows = [r for ws in wb.worksheets for r in ws.iter_rows(max_row=60, values_only=True)]
@@ -422,11 +444,15 @@ def detect_brand(path):
             rows = core.read_price(path)[0][:60]
     except Exception:
         return 'bohemia'
+    helios = 0
     for row in rows:
         for v in row:
-            if v is not None and BOHEMIA_CODE.match(str(v).strip()):
+            t = str(v).strip() if v is not None else ''
+            if BOHEMIA_CODE.match(t):
                 return 'bohemia'
-    return 'guzzini'
+            if HELIOS_CODE.match(t) or t.startswith('4006657') or 'helios' in t.lower():
+                helios += 1
+    return 'helios' if helios >= 3 else 'guzzini'
 
 
 # ---------------------------------------------------------------- main
@@ -462,7 +488,7 @@ def run(price, folder, out, log=print, progress=None, existing_dir=None):
             'Код в каталоге', 'Цвет', 'Подпись в каталоге', 'Проверка', 'Каталог', 'Стр.', 'Файл фото', 'Фото']
     widths = [14, 8, 14, 32, 14, 9, 16, 12, 7, 40, 18, 30, 6, 24, 18]
     fills = {'есть в папке': '#DDEBF7', 'совпадает': '#C6EFCE', 'фото цвета': '#C6EFCE',
-             'проверить цвет': '#FFEB9C', 'проверить': '#FFEB9C', 'нет в каталогах': '#FFC7CE'}
+             'проверить цвет': '#FFEB9C', 'проверить': '#FFEB9C', 'фото модели': '#E2EFDA', 'нет в каталогах': '#FFC7CE'}
     report, docs, saved, thumbs, native = [], {}, {}, {}, {}
     # сколько строк прайса приходится на один базовый код (разные цвета одного товара)
     per_base = collections.Counter()
@@ -505,6 +531,10 @@ def run(price, folder, out, log=print, progress=None, existing_dir=None):
             if verdict == 'совпадает' and it['shared'] > 1:
                 verdict, score = 'проверить', 2
             scored.append((score, catalog_rank(it['catalog']), it['page'], it, verdict, rect, color))
+            if it.get('verdict'):
+                v = it['verdict'] if not color else 'проверить цвет'
+                scored[-1] = ({'фото цвета': 0, 'совпадает': 1, 'фото модели': 1}.get(v, 2), catalog_rank(it['catalog']),
+                              it['page'], it, v, it['rect'], '')
         scored.sort(key=lambda x: x[:3])
         _, _, _, best, verdict, rect, color = scored[0]
         if color and color not in best['all_colors'] and best['all_colors']:
