@@ -29,7 +29,8 @@ Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
 WizardStyle=modern
-CloseApplications=yes
+; программу закрываем сами в PrepareToInstall (taskkill), окно Restart Manager «не удалось закрыть приложения» не нужно
+CloseApplications=no
 RestartApplications=no
 
 [Languages]
