@@ -803,7 +803,7 @@ def compare(items, infos, price, log=print):
     return stats
 
 
-def write_report(path, infos, items, price=None):
+def write_report(path, infos, items, price=None, order_rows=None, order_items=None):
     wb = xlsxwriter.Workbook(path)
     base = dict(valign='top', text_wrap=True)
     hdr = wb.add_format(dict(base, bold=True, bg_color='#F2F2F2', border=1))
@@ -811,12 +811,70 @@ def write_report(path, infos, items, price=None):
     money = wb.add_format(dict(base, num_format='#,##0.00'))
     colored = {}
 
-    def fill(status):
-        color = FILLS.get(status)
+    def fill(status, color=None):
+        color = color or FILLS.get(status)
         if not color:
             return cell
         return colored.get(color) or colored.setdefault(color, wb.add_format(dict(base, bg_color=color)))
 
+    def put(ws, r, vals, fmts):
+        for c, (v, f) in enumerate(zip(vals, fmts)):
+            if v is None or v == '':
+                ws.write_blank(r, c, None, f)
+            else:
+                ws.write(r, c, v, f)
+
+    if order_rows is not None:
+        import orders as om
+        wo = wb.add_worksheet('Сверка с заказом')
+        oc = [('Код (заказ)', 20), ('Описание', 38), ('Кол-во в заказе', 10), ('Цена в заказе', 11),
+              ('Сумма в заказе', 12), ('Код в документе', 20), ('Кол-во в документе', 11), ('Цена в документе', 11),
+              ('Сумма в документе', 12), ('Разница кол-во', 10), ('Разница цены', 10), ('Расхождение', 30),
+              ('Файл заказа', 26), ('Документ поставщика', 26)]
+        for c, (t, w) in enumerate(oc):
+            wo.set_column(c, c, w)
+        wo.write_row(0, 0, [t for t, _ in oc], hdr)
+        for r, x in enumerate(order_rows, 1):
+            dq = None if x['o_qty'] is None or x['d_qty'] is None else round(x['d_qty'] - x['o_qty'], 4)
+            dp = None if x['o_price'] is None or x['d_price'] is None else round(x['d_price'] - x['o_price'], 4)
+            if x['status'].startswith('совпадает ('):    # в документе упаковками — разница только в единицах
+                dq = dp = None
+            put(wo, r, [x['code'], x['desc'], x['o_qty'], x['o_price'], x['o_sum'], x['d_code'], x['d_qty'],
+                        x['d_price'], x['d_sum'], dq, dp, x['status'], x['o_files'], x['d_files']],
+                [cell, cell, cell, money, money, cell, cell, money, money, cell, money,
+                 fill(x['status'], om.fill_of(x['status'])), cell, cell])
+        n = len(order_rows) + 2
+        o_sum = round(sum(x['o_sum'] or 0 for x in order_rows), 2)
+        d_sum = round(sum(x['d_sum'] or 0 for x in order_rows), 2)
+        wo.write(n, 1, 'Итого', hdr)
+        wo.write(n, 4, o_sum, money)
+        wo.write(n, 8, d_sum, money)
+        wo.freeze_panes(1, 0)
+        wo.autofilter(0, 0, max(len(order_rows), 1), len(oc) - 1)
+
+    if order_items:
+        wz = wb.add_worksheet('Заказ')
+        zc = [('Файл заказа', 26), ('Лист', 10), ('Строка', 7), ('Код', 20), ('Описание', 40), ('Кол-во', 9),
+              ('Цена', 11), ('Сумма', 12)]
+        if price:
+            zc += [('Прайс', 22), ('Код в прайсе', 22), ('Цена прайса', 11), ('Разница', 10), ('Разница %', 9),
+                   ('Сверка с прайсом', 18)]
+        for c, (t, w) in enumerate(zc):
+            wz.set_column(c, c, w)
+        wz.write_row(0, 0, [t for t, _ in zc], hdr)
+        for r, it in enumerate(order_items, 1):
+            vals = [it['file'], it['sheet'], it['row'], it['code'], it['desc'], it['qty'], it['price'], it['total']]
+            fmts = [cell] * 6 + [money, money]
+            if price:
+                vals += [it.get('pl_file'), it.get('pl_code'), it.get('pl_price'), it.get('diff'), it.get('pct'),
+                         it.get('status')]
+                fmts += [cell, cell, money, money, cell, fill(it.get('status'))]
+            put(wz, r, vals, fmts)
+        wz.freeze_panes(1, 0)
+
+    if not items and order_rows is None and order_items:
+        wb.close()
+        return
     ws = wb.add_worksheet('Позиции')
     cols = [('Файл', 26), ('Стр.', 5), ('№', 5), ('Код', 18), ('Описание', 40), ('Кол-во', 9), ('Ед.', 6),
             ('Цена', 11), ('Скидка', 8), ('Сумма', 12), ('Кол-во×цена', 12)]
@@ -864,11 +922,13 @@ def write_report(path, infos, items, price=None):
     wb.close()
 
 
-def run(pdfs, out_xlsx, price_path=None, log=print, progress=None):
+def run(pdfs, out_xlsx, price_path=None, log=print, progress=None, order_paths=None):
     """pdfs — список PDF/Excel (Proforma/Invoice), out_xlsx — путь отчёта,
-    price_path — прайс или список прайсов (необязательно)."""
-    if not pdfs:
-        raise InvoiceError('Не выбраны PDF-файлы Proforma / Invoice.')
+    price_path — прайс или список прайсов (необязательно),
+    order_paths — наши заказы поставщику (Excel, необязательно): сверка «заказ ↔ документы поставщика»."""
+    pdfs = list(pdfs or [])
+    if not pdfs and not order_paths:
+        raise InvoiceError('Не выбраны ни документы поставщика (Proforma / Invoice), ни заказы.')
     infos, items, errors = [], [], []
     log('Читаю документы...')
     for k, p in enumerate(pdfs):
@@ -885,41 +945,72 @@ def run(pdfs, out_xlsx, price_path=None, log=print, progress=None):
             continue
         infos.append(info)
         items += its
-    if not items:
+    if pdfs and not items:
         raise InvoiceError('Ни в одном документе не нашёл позиций. ' + (errors[0] if errors else
                            'Нужна таблица со строкой заголовков вроде Code / Description / Qty / Price / Amount.'))
+    order_items, order_rows, ostats = [], None, collections.Counter()
+    if order_paths:
+        import orders as om
+        log('Читаю заказы...')
+        for p in order_paths:
+            try:
+                order_items += om.read_order(p, log)
+            except Exception as e:
+                log(f'  ! {os.path.basename(p)}: {e}')
+                errors.append(str(e))
+        if not order_items:
+            raise InvoiceError('В файлах заказов не нашёл позиций с количеством '
+                               '(нужны колонки Reference / Code и Quantity / Кол-во).')
+        if items:
+            log('Сверяю заказ с документами поставщика...')
+            order_rows = om.compare_orders(order_items, items)
+            for x in order_rows:
+                ostats[x['status']] += 1
+            for k, v in ostats.most_common():
+                log(f'  {k}: {v}')
     stats = collections.Counter()
     price = None
     if price_path:
         log('Читаю прайсы...')
         price = PriceList(price_path, log)
         log('Сверяю с прайсом...')
-        stats = compare(items, infos, price, log)
+        if items:
+            stats = compare(items, infos, price, log)
+        if order_items:
+            for it in order_items:
+                it.setdefault('page', '')
+                it.setdefault('no', '')
+            compare(order_items, [dict(file=f, currency='') for f in {it['file'] for it in order_items}], price,
+                    lambda *a: None)
     if progress:
         progress(0.9)
     os.makedirs(os.path.dirname(os.path.abspath(out_xlsx)), exist_ok=True)
-    write_report(out_xlsx, infos, items, price)
+    write_report(out_xlsx, infos, items, price, order_rows, order_items)
     if progress:
         progress(1.0)
     log(f'\nДокументов: {len(infos)}, позиций: {len(items)}')
     bad = sum(1 for it in items if it['check'] == 'проверить')
     if bad:
         log(f'  строк, где кол-во × цена ≠ сумма: {bad}')
+    if order_items:
+        log(f'Позиций в заказах: {len(order_items)}')
     log(f'Отчёт: {out_xlsx}')
-    return dict(docs=len(infos), items=len(items), stats=stats, bad_lines=bad, errors=errors)
+    return dict(docs=len(infos), items=len(items), stats=stats, bad_lines=bad, errors=errors,
+                orders=len(order_items), order_stats=ostats)
 
 
 def main():
     args = sys.argv[1:]
-    price = []
-    while '--price' in args:
-        i = args.index('--price')
-        price.append(args[i + 1])
-        del args[i:i + 2]
-    if len(args) < 2:
+    price, order = [], []
+    for flag, dst in (('--price', price), ('--order', order)):
+        while flag in args:
+            i = args.index(flag)
+            dst.append(args[i + 1])
+            del args[i:i + 2]
+    if len(args) < 1 or (len(args) < 2 and not order):
         print(__doc__)
         sys.exit(1)
-    run(args[1:], args[0], price or None)
+    run(args[1:], args[0], price or None, order_paths=order or None)
 
 
 if __name__ == '__main__':
