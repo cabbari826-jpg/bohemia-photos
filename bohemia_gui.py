@@ -272,6 +272,11 @@ class App(tk.Tk):
         enable_dpi_awareness()
         super().__init__()
         self.title(APP_TITLE)
+        try:   # иконка окна (в exe файл вшит рядом с программой)
+            base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+            self.iconbitmap(default=os.path.join(base, 'app.ico'))
+        except Exception:
+            pass
         self.place_window()
         self.q = queue.Queue()
         self.worker = None
@@ -324,7 +329,7 @@ class App(tk.Tk):
                        '(Bohemia, Guzzini, Helios; несколько прайсов за один запуск)').pack(pady=(6, 0))
         bottom = ttk.Frame(f)
         bottom.pack(side='bottom', fill='x')
-        ttk.Label(bottom, text=f'Версия {updater.current_version()}', foreground='#777').pack(side='left')
+        ttk.Label(bottom, text=f'Версия {updater.current_version()}  ·  © Jooble Soft', foreground='#777').pack(side='left')
         self.upd_btn = ttk.Button(bottom, text='Проверить обновления', command=lambda: self.check_updates(True))
         self.upd_btn.pack(side='right')
         self.upd_label = ttk.Label(bottom, text='', foreground='#777')
