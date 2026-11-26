@@ -11,13 +11,14 @@
 
 Картинки форм рисуются через PIL со сглаживанием и кешируются, поэтому анимация лёгкая (~60 кадров/с).
 """
+import time
 import tkinter as tk
 
 from PIL import Image, ImageDraw, ImageTk
 
 import ui_theme as ui
 
-FPS_MS = 16
+FRAME_MS = 8          # ~120 запросов кадра в секунду; реальный шаг считается по часам
 
 
 def _rgb(c):
@@ -32,29 +33,48 @@ def mix(a, b, t):
 
 
 class Spring:
-    """Пружина: value тянется к target; stiffness/damping задают упругость и затухание."""
+    """Физическая пружина, считается по реальному времени (а не по кадрам), поэтому движение плавное,
+    даже если таймер Windows срабатывает неровно. freq — частота колебаний (Гц, больше — быстрее),
+    zeta — затухание (1 — без перелёта, меньше — с отскоком)."""
 
-    def __init__(self, widget, on_step, value=0.0, stiffness=0.22, damping=0.62):
+    def __init__(self, widget, on_step, value=0.0, freq=4.0, zeta=0.8):
+        import math
         self.w, self.on_step = widget, on_step
         self.value, self.target, self.vel = value, value, 0.0
-        self.k, self.d = stiffness, damping
+        self.omega, self.zeta = 2 * math.pi * freq, zeta
         self._job = None
+        self._t = None
 
     def to(self, target, kick=0.0):
+        """kick — начальная скорость (в единицах значения за секунду)."""
         self.target = target
         self.vel += kick
         if self._job is None:
-            self._job = self.w.after(FPS_MS, self._tick)
+            self._t = time.perf_counter()
+            self._job = self.w.after(FRAME_MS, self._tick)
+
+    def advance(self, dt):
+        """Шаг физики на dt секунд (мелкими подшагами — устойчиво при любом dt). -> True, если ещё движется."""
+        w, z = self.omega, self.zeta
+        n = max(1, int(dt / 0.002))
+        h = dt / n
+        for _ in range(n):
+            a = -w * w * (self.value - self.target) - 2 * z * w * self.vel
+            self.vel += a * h
+            self.value += self.vel * h
+        if abs(self.vel) < 0.01 and abs(self.target - self.value) < 0.002:
+            self.value, self.vel = self.target, 0.0
+            return False
+        return True
 
     def _tick(self):
         self._job = None
-        f = (self.target - self.value) * self.k
-        self.vel = (self.vel + f) * self.d
-        self.value += self.vel
-        if abs(self.vel) < 0.002 and abs(self.target - self.value) < 0.002:
-            self.value, self.vel = self.target, 0.0
-        else:
-            self._job = self.w.after(FPS_MS, self._tick)
+        t = time.perf_counter()
+        dt = min(0.05, max(0.001, t - (self._t or t)))
+        self._t = t
+        moving = self.advance(dt)
+        if moving:
+            self._job = self.w.after(FRAME_MS, self._tick)
         try:
             self.on_step()
         except tk.TclError:
@@ -66,7 +86,7 @@ _cache = {}
 
 def shape(w, h, r, fill, outer, border=None, bw=1.0, inset=0.0, k=3):
     """Скруглённая плашка w×h (с отступом inset от краёв) на фоне outer; результат кешируется."""
-    key = (w, h, round(r, 1), fill, outer, border, round(bw, 1), round(inset, 1))
+    key = (w, h, round(r, 2), fill, outer, border, round(bw, 2), round(inset, 2))
     img = _cache.get(key)
     if img is None:
         W, H = w * k, h * k
@@ -106,8 +126,8 @@ class MotionButton(tk.Canvas):
                          cursor='hand2', **kw)
         self.m, self.outer, self.kind, self.command = m, bg, kind, command
         self.state = state
-        self.hover = Spring(self, self._draw, stiffness=0.25, damping=0.55)
-        self.press = Spring(self, self._draw, stiffness=0.3, damping=0.55)
+        self.hover = Spring(self, self._draw, freq=3.5, zeta=1.0)
+        self.press = Spring(self, self._draw, freq=5.0, zeta=0.5)
         self._img = self.create_image(0, 0, anchor='nw')
         self._txt = self.create_text((self.W + 2 * m) / 2, (self.H + 2 * m) / 2, text=text,
                                      font=ui.F[KINDS[kind][4]])
@@ -120,13 +140,13 @@ class MotionButton(tk.Canvas):
 
     def _down(self, e):
         if self.state != 'disabled':
-            self.press.to(1, kick=0.15)
+            self.press.to(1)
 
     def _up(self, e):
         if self.state == 'disabled':
             return
         inside = 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height()
-        self.press.to(0, kick=-0.25)          # отпустили — пружинит, чуть перелетая
+        self.press.to(0, kick=-3.0)           # отпустили — пружинит, чуть перелетая
         if inside and self.command:
             self.after(60, self.command)
 
@@ -143,7 +163,7 @@ class MotionButton(tk.Canvas):
         r = self.H / 2 * (1 - 0.42 * max(0.0, min(1.2, p)))      # круглые углы -> «сквиркл» при нажатии
         inset = self.m + ui._px(2.2) * p                          # сжатие (при перелёте — чуть больше обычного)
         inset = max(0.0, inset)
-        img = shape(self.W + 2 * self.m, self.H + 2 * self.m, r, c, self.outer, b, inset=round(inset * 2) / 2)
+        img = shape(self.W + 2 * self.m, self.H + 2 * self.m, r, c, self.outer, b, inset=round(inset * 4) / 4)
         self._photo = ImageTk.PhotoImage(img, master=self)
         self.itemconfigure(self._img, image=self._photo)
         self.itemconfigure(self._txt, fill=fg)
@@ -186,12 +206,12 @@ class Field(tk.Canvas):
         super().__init__(master, height=ui._px(height), bg=bg, highlightthickness=0, bd=0, **kw)
         self.base_h = ui._px(height)
         self.outer, self.pad = bg, (ui._px(pad[0]), ui._px(pad[1]))
-        self.impact = Spring(self, self._bump, stiffness=0.14, damping=0.8)
+        self.impact = Spring(self, self._bump, freq=2.4, zeta=0.32)
         self.amp = 0
         self.m = ui._px(4)                            # запас под «вдох» при перетаскивании
-        self.focus = Spring(self, self._draw, stiffness=0.25, damping=0.6)
-        self.drag = Spring(self, self._draw, stiffness=0.2, damping=0.6)
-        self.pop = Spring(self, self._draw, stiffness=0.18, damping=0.72)
+        self.focus = Spring(self, self._draw, freq=3.5, zeta=1.0)
+        self.drag = Spring(self, self._draw, freq=3.0, zeta=0.75)
+        self.pop = Spring(self, self._draw, freq=3.2, zeta=0.4)
         self._img = self.create_image(0, 0, anchor='nw')
         self.inner = make(self)
         self._win = self.create_window(0, 0, anchor='nw', window=self.inner)
@@ -210,10 +230,10 @@ class Field(tk.Canvas):
         self.drag.to(0)
         w = min(1.0, max(0.15, math.log10(max(size, 1) / 20_000 + 1) / 2.3))   # 0.15 … 1 (≈ от 10 КБ до 4 МБ+)
         self.pop.value = 0.4 + 0.6 * w
-        self.pop.to(0, kick=-0.06 * w)
+        self.pop.to(0)
         self.amp = ui._px(26) * w
         self.impact.value = 0.0
-        self.impact.to(0, kick=0.75)        # толчок вниз, перелёт вверх, затухание
+        self.impact.to(0, kick=23.0)        # толчок вниз, перелёт вверх, затухание
 
     def _bump(self):
         extra = self.amp * self.impact.value
@@ -229,7 +249,7 @@ class Field(tk.Canvas):
         bw = 1 + 1.2 * max(f * 0.6, d)
         inset = self.m * (1 - d) + ui._px(3) * p                 # перетаскивание — поле «вдыхает»
         inset = max(0.0, inset)
-        img = shape(w, h, ui._px(16), fill, self.outer, border, bw=round(bw * 2) / 2, inset=round(inset * 2) / 2)
+        img = shape(w, h, ui._px(16), fill, self.outer, border, bw=round(bw * 4) / 4, inset=round(inset * 4) / 4)
         self._photo = ImageTk.PhotoImage(img, master=self)
         self.itemconfigure(self._img, image=self._photo)
         px, py = self.pad
@@ -290,7 +310,7 @@ class CardHover:
 
     def __init__(self, frame, styles):
         self.f, self.styles = frame, styles
-        self.s = Spring(frame, self._draw, stiffness=0.25, damping=0.6)
+        self.s = Spring(frame, self._draw, freq=3.0, zeta=1.0)
 
     def set(self, on):
         self.s.to(1 if on else 0)
