@@ -733,10 +733,13 @@ class PriceList:
         sc = core.short_code(core.clean_code(code))
         if sc and core.code_key(sc) in self.index:
             return self.index[core.code_key(sc)], 'по короткому коду'
-        base = re.match(r'^\s*([A-Za-z]{0,4}\s?\d{3,})(?:-\w{1,4})+\s*$', str(code))
-        if base and core.code_key(base.group(1)) in self.index:
-            # 2941-001 (код с цветом) -> 2941 в прайсе (Helios)
-            return self.index[core.code_key(base.group(1))], 'по коду без цвета'
+        # 2944-C-001 (код с цветом) -> 2944-C -> 2944 в прайсе (Helios)
+        parts = str(code).strip().split('-')
+        if len(parts) > 1 and re.match(r'^[A-Za-z]{0,4}\s?\d{3,}$', parts[0]) and all(re.match(r'^\w{1,4}$', p) for p in parts[1:]):
+            for n in range(len(parts) - 1, 0, -1):
+                kb = core.code_key('-'.join(parts[:n]))
+                if kb in self.index:
+                    return self.index[kb], 'по коду без цвета'
         if len(k) >= 5:
             # код документа — начало кода прайса (1793.00 -> 179300156)
             j = bisect.bisect_left(self.keys, k)
