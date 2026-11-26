@@ -2,7 +2,7 @@
 import os
 
 COMPANY = 'Jooble Soft'
-PRODUCT = 'Bohemia Photos'
+PRODUCT = 'Inventa'
 
 here = os.path.dirname(os.path.abspath(__file__))
 ver = open(os.path.join(here, 'VERSION'), encoding='utf-8').read().strip()
@@ -15,9 +15,9 @@ text = f'''VSVersionInfo(
       StringStruct('CompanyName', '{COMPANY}'),
       StringStruct('FileDescription', '{PRODUCT}'),
       StringStruct('FileVersion', '{ver}'),
-      StringStruct('InternalName', 'BohemiaPhotos'),
+      StringStruct('InternalName', 'Inventa'),
       StringStruct('LegalCopyright', '© {COMPANY}'),
-      StringStruct('OriginalFilename', 'BohemiaPhotos.exe'),
+      StringStruct('OriginalFilename', 'Inventa.exe'),
       StringStruct('ProductName', '{PRODUCT}'),
       StringStruct('ProductVersion', '{ver}')])]),
     VarFileInfo([VarStruct('Translation', [0x0419, 1200])])
