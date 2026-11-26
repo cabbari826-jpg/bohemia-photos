@@ -1,5 +1,6 @@
 name: Deploy site (Cloudflare Pages)
-# Страница Inventa на Cloudflare Pages: https://inventa.pages.dev
+# Страница Inventa на Cloudflare Pages.
+# Берётся первое имя из CANDIDATES, у которого адрес <имя>.pages.dev без случайного хвоста.
 # Нужен секрет репозитория CLOUDFLARE_API_TOKEN (права: Account → Cloudflare Pages → Edit).
 on:
   push:
@@ -14,7 +15,7 @@ concurrency:
 env:
   CLOUDFLARE_ACCOUNT_ID: 9b400b74f4caff725b658e53493d1f78
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  PROJECT: inventa
+  CANDIDATES: inventa-app inventa-soft inventa-jooble jooble-inventa
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -23,14 +24,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Check token
+      - name: Pick project with a clean address
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::error::Добавьте секрет CLOUDFLARE_API_TOKEN: Settings → Secrets and variables → Actions"
             exit 1
           fi
-      # Создаёт проект при первом запуске; если он уже есть, шаг ничего не меняет
-      - name: Create Pages project (first run)
-        run: npx --yes wrangler@3 pages project create "$PROJECT" --production-branch=main || true
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects"
+          AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          for n in $CANDIDATES; do
+            r=$(curl -s -H "$AUTH" "$API/$n")
+            if [ "$(echo "$r" | jq -r .success)" = "true" ]; then
+              sub=$(echo "$r" | jq -r .result.subdomain)
+              if [ "$sub" = "$n.pages.dev" ]; then echo "PROJECT=$n" >> "$GITHUB_ENV"; echo "Using $n ($sub)"; exit 0; fi
+              echo "$n exists with address $sub, skipping"; continue
+            fi
+            r=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
+                 -d "{\"name\":\"$n\",\"production_branch\":\"main\"}" "$API")
+            sub=$(echo "$r" | jq -r .result.subdomain)
+            if [ "$sub" = "$n.pages.dev" ]; then echo "PROJECT=$n" >> "$GITHUB_ENV"; echo "Created $n ($sub)"; exit 0; fi
+            echo "$n got address $sub, removing the project just created"
+            [ "$sub" != "null" ] && curl -s -X DELETE -H "$AUTH" "$API/$n" > /dev/null
+          done
+          echo "::error::Ни одно имя из CANDIDATES не дало чистый адрес; добавьте ещё вариантов"
+          exit 1
       - name: Deploy
-        run: npx --yes wrangler@3 pages deploy site --project-name="$PROJECT" --branch=main --commit-dirty=true
+        run: |
+          npx --yes wrangler@3 pages deploy site --project-name="$PROJECT" --branch=main --commit-dirty=true
+          echo "### https://$PROJECT.pages.dev" >> "$GITHUB_STEP_SUMMARY"
