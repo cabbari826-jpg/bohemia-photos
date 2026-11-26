@@ -35,3 +35,7 @@
     python bohemia_photos.py ПРАЙС.xlsx ПАПКА_КАТАЛОГОВ [РЕЗУЛЬТАТ] [ИМЕЮЩИЕСЯ_ФОТО]
     python guzzini_photos.py ПРАЙС.xlsx ПАПКА_КАТАЛОГОВ [РЕЗУЛЬТАТ] [ИМЕЮЩИЕСЯ_ФОТО]
     python invoice_reader.py ОТЧЁТ.xlsx ДОК1.pdf [ДОК2.pdf ...] [--price ПРАЙС1.xlsx --price ПРАЙС2.xlsx]
+
+
+## Шрифты
+В папке `fonts`: Manrope (© The Manrope Project Authors) и Grand Hotel (© Astigmatic), обе под лицензией SIL Open Font License 1.1 (тексты лицензий рядом).

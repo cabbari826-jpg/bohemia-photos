@@ -21,13 +21,16 @@ UninstallDisplayName=Inventa (Jooble Soft)
 DefaultDirName={autopf}\Inventa
 DefaultGroupName=Inventa
 UsePreviousGroup=no
+; всегда в папку пользователя (запись разрешена без прав администратора); старую копию удаляем сами
+UsePreviousAppDir=no
 OutputDir=dist
 OutputBaseFilename=Inventa-Setup
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
 WizardStyle=modern
-CloseApplications=yes
+; программу закрываем сами в PrepareToInstall (taskkill), окно Restart Manager «не удалось закрыть приложения» не нужно
+CloseApplications=no
 RestartApplications=no
 
 [Languages]
@@ -53,18 +56,66 @@ Name: "{autodesktop}\Inventa"; Filename: "{app}\Inventa.exe"; Tasks: desktopicon
 Filename: "{app}\Inventa.exe"; Description: "Запустить"; Flags: nowait postinstall
 
 [Code]
-// Старая версия (BohemiaPhotos.exe) сама закрывается после запуска обновления — ждём, пока файл освободится
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+// Программа сама закрывается после запуска обновления — ждём (до 10 с), пока её exe освободится
+function WaitUnlocked(f: String): Boolean;
 var
   i: Integer;
-  f: String;
+  st: TFileStream;
+begin
+  // запущенный exe можно переименовать, но нельзя открыть на запись — проверяем именно запись
+  Result := True;
+  for i := 1 to 20 do
+  begin
+    if not FileExists(f) then Exit;
+    try
+      st := TFileStream.Create(f, fmOpenReadWrite or fmShareExclusive);
+      st.Free;
+      Exit;
+    except
+      Sleep(500);
+    end;
+  end;
+  Result := False;
+end;
+
+procedure KillApp(name: String);
+var
+  rc: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM ' + name, '', SW_HIDE, ewWaitUntilTerminated, rc);
+end;
+
+// Удаляем прошлую установку (Bohemia Photos / Inventa) её же деинсталлятором, где бы она ни стояла.
+// Для установки «для всех» (Program Files) Windows спросит разрешение; отказ — не ошибка, ставим дальше.
+procedure UninstallOld(root: Integer);
+var
+  key, s: String;
+  rc: Integer;
+begin
+  key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Bohemia Photos_is1';
+  if not RegQueryStringValue(root, key, 'UninstallString', s) then Exit;
+  s := RemoveQuotes(s);
+  if not FileExists(s) then Exit;
+  Log('Удаляю прежнюю версию: ' + s);
+  if not ShellExec('', s, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, rc) then
+    Log('Деинсталлятор не запустился: ' + SysErrorMessage(rc))
+  else
+    Log('Деинсталлятор завершился, код ' + IntToStr(rc));
+  Sleep(1000);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
-  f := ExpandConstant('{app}\BohemiaPhotos.exe');
-  for i := 1 to 30 do
-  begin
-    if (not FileExists(f)) or DeleteFile(f) then
-      Break;
-    Sleep(500);
-  end;
+  // программа сама закрывается после запуска обновления; ждём, потом закрываем принудительно
+  if not WaitUnlocked(ExpandConstant('{app}\Inventa.exe')) then
+    Log('Inventa.exe занят');
+  KillApp('Inventa.exe');
+  KillApp('BohemiaPhotos.exe');
+  Sleep(500);
+  UninstallOld(HKCU);
+  UninstallOld(HKLM);
+  if IsWin64 then
+    UninstallOld(HKLM64);
+  DeleteFile(ExpandConstant('{app}\BohemiaPhotos.exe'));
 end;

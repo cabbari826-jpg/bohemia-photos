@@ -78,8 +78,61 @@ def download(url, progress=None):
     return dest
 
 
-def run_installer(path):
-    """Запускает установщик тихо; он сам закроет программу, обновит и запустит её снова."""
-    flags = 0x00000008 | 0x00000200 if sys.platform.startswith('win') else 0   # DETACHED | NEW_PROCESS_GROUP
-    subprocess.Popen([path, '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'],
-                     creationflags=flags, close_fds=True)
+def _state_dir():
+    d = os.path.join(os.environ.get('LOCALAPPDATA') or tempfile.gettempdir(), 'Inventa')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+MARK = 'update.json'
+LOG_NAME = 'Inventa-update.log'
+
+
+def installer_args(log):
+    return ['/SP-', '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/NOCANCEL', f'/LOG={log}']
+
+
+def run_installer(path, version=''):
+    """Запускает установщик тихо: он закроет программу, удалит прежнюю установку, поставит новую версию
+    и запустит её. Ход установки пишется в %TEMP%\\Inventa-update.log; при следующем запуске
+    программа проверит, что версия действительно сменилась (pending_result)."""
+    log = os.path.join(tempfile.gettempdir(), LOG_NAME)
+    args = installer_args(log)
+    try:
+        with open(os.path.join(_state_dir(), MARK), 'w', encoding='utf-8') as f:
+            json.dump(dict(target=version, old=current_version(), log=log), f)
+    except OSError:
+        pass
+    if sys.platform.startswith('win'):
+        import ctypes
+        # как двойной щелчок по файлу: отдельный процесс, не связанный с программой
+        rc = ctypes.windll.shell32.ShellExecuteW(None, 'open', path,
+                                                 ' '.join(f'"{a}"' if ' ' in a else a for a in args), None, 1)
+        if rc > 32:
+            return
+    subprocess.Popen([path] + args, close_fds=True)
+
+
+def pending_result():
+    """После обновления: None — проверять нечего; ('ok', версия) или ('fail', версия, хвост журнала)."""
+    p = os.path.join(_state_dir(), MARK)
+    try:
+        with open(p, encoding='utf-8') as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    try:
+        os.remove(p)
+    except OSError:
+        pass
+    target = d.get('target') or ''
+    if target and parse(current_version()) >= parse(target):
+        return ('ok', current_version())
+    tail = ''
+    try:
+        with open(d.get('log') or '', encoding='utf-8', errors='replace') as f:
+            lines = [ln.rstrip() for ln in f if ln.strip()]
+        tail = '\n'.join(lines[-12:])
+    except OSError:
+        tail = 'журнал установки не найден — установщик, похоже, не запустился (антивирус?)'
+    return ('fail', target, tail)

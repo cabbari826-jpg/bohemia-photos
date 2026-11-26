@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Version
@@ -23,7 +24,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt
       - run: python make_version_info.py
-      - run: python -m PyInstaller --noconfirm --onefile --windowed --name Inventa --add-data "VERSION;." --add-data "app.ico;." --icon app.ico --version-file version_info.txt bohemia_gui.py
+      - run: python -m PyInstaller --noconfirm --onefile --windowed --name Inventa --add-data "VERSION;." --add-data "app.ico;." --add-data "app.png;." --add-data "fonts;fonts" --collect-all tkinterdnd2 --icon app.ico --version-file version_info.txt bohemia_gui.py
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |
@@ -33,6 +34,35 @@ jobs:
           & $iscc installer.iss
           # копия под старым именем: версии 1.2.x (ещё Bohemia Photos) ищут в релизе именно этот файл
           Copy-Item dist/Inventa-Setup.exe dist/BohemiaPhotos-Setup.exe
+      # Проверка обновления как из программы: ставим прошлый релиз, запускаем его и ставим новый поверх
+      - name: Update test
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          $old = "$env:RUNNER_TEMP\old-setup.exe"
+          Invoke-WebRequest "https://github.com/${{ github.repository }}/releases/latest/download/Inventa-Setup.exe" -OutFile $old
+          # не -Wait: он ждёт и программу, которую установщик запускает в конце
+          $o = Start-Process $old -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+          $o.WaitForExit(180000) | Out-Null
+          Start-Sleep 3
+          Get-Process Inventa -ErrorAction SilentlyContinue | Stop-Process -Force
+          $dir = "$env:LOCALAPPDATA\Programs\Inventa"
+          $exe = "$dir\Inventa.exe"
+          if (-not (Test-Path $exe)) { Get-ChildItem $env:LOCALAPPDATA\Programs -Recurse -Depth 1 | Out-String | Write-Host; throw "old version not installed" }
+          Write-Host "old:" (Get-Item $exe).VersionInfo.FileVersion
+          $app = Start-Process $exe -PassThru
+          Start-Sleep 8
+          $log = "$env:RUNNER_TEMP\upd.log"
+          $p = Start-Process dist\Inventa-Setup.exe -ArgumentList '/SP-','/SILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS','/NOCANCEL',"/LOG=$log" -PassThru
+          Start-Sleep 5   # установщик должен дождаться, пока программа закроется
+          # программа сама выходит после запуска установщика (у onefile-exe два процесса)
+          Get-Process Inventa -ErrorAction SilentlyContinue | Stop-Process -Force
+          $p.WaitForExit(180000) | Out-Null
+          Get-Content $log -Tail 25
+          $v = (Get-Item $exe).VersionInfo.FileVersion
+          Write-Host "new:" $v "exit:" $p.ExitCode
+          Get-Process Inventa -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (-not $v.StartsWith($env:APP_VERSION)) { throw "update did not replace Inventa.exe ($v)" }
       - uses: actions/upload-artifact@v4
         with:
           name: Inventa

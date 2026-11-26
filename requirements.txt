@@ -5,3 +5,4 @@ xlrd==2.0.1
 msoffcrypto-tool==5.4.2
 xlsxwriter==3.2.5
 pyinstaller==6.14.2
+tkinterdnd2==0.4.3
