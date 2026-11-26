@@ -9,7 +9,7 @@
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Grand+Hotel&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --ink: #0f2f38;
@@ -54,6 +54,26 @@
   .lang button { border: 0; background: none; font: 600 12px/1 Manrope, sans-serif; padding: 6px 10px; border-radius: 999px; color: var(--ink-soft); cursor: pointer; }
   .lang button[aria-pressed="true"] { background: var(--teal); color: #fff; }
   @media (max-width: 720px) { .top nav .hide-sm { display: none; } .brand small { display: none; } }
+
+  .script { font-family: "Grand Hotel", cursive; font-weight: 400; letter-spacing: 0; }
+  .brand .script { font-size: 30px; line-height: 1; margin-top: -2px; }
+
+  /* screenshots */
+  .shot { margin: 0; border-radius: 14px; overflow: hidden; background: #f4f8f9; box-shadow: 0 30px 60px -20px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.1); }
+  .shot img, .shot video { display: block; width: 100%; height: auto; }
+  .gallery { margin-top: 36px; }
+  .tabs { display: inline-flex; flex-wrap: wrap; gap: 6px; padding: 4px; background: var(--mist); border-radius: 999px; margin-bottom: 20px; }
+  .tabs button { border: 0; background: none; font: 600 14px/1 Manrope, sans-serif; padding: 10px 16px; border-radius: 999px; color: var(--ink-soft); cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--card); color: var(--teal); box-shadow: 0 2px 8px -3px rgba(15,47,56,.25); }
+  .gallery .shot { box-shadow: 0 24px 50px -24px rgba(15,47,56,.45), 0 0 0 1px var(--line); max-width: 1000px; }
+  .gallery figcaption { padding: 12px 4px 0; color: var(--ink-soft); font-size: 15px; background: var(--paper); }
+  .motion { display: grid; grid-template-columns: 1fr 1.1fr; gap: 48px; align-items: center; }
+  .motion .shot { box-shadow: 0 24px 50px -24px rgba(15,47,56,.45), 0 0 0 1px var(--line); }
+  .motion ul { margin: 18px 0 0; padding: 0; list-style: none; }
+  .motion li { padding: 6px 0 6px 28px; position: relative; color: var(--ink-soft); }
+  .motion li::before { content: ""; position: absolute; left: 4px; top: 14px; width: 10px; height: 10px; border-radius: 3px; background: var(--amber); transform: rotate(45deg); }
+  .motion li b { color: var(--ink); }
+  @media (max-width: 900px) { .motion { grid-template-columns: 1fr; gap: 28px; } }
 
   /* hero */
   .hero { background: radial-gradient(1100px 500px at 85% -10%, #2a8197 0%, transparent 60%), linear-gradient(160deg, #0f3e4b 0%, var(--teal) 55%, #17596a 100%); color: #fff; overflow: hidden; }
@@ -141,7 +161,7 @@
   .ver h3 { margin: 0; font-size: 20px; }
   .badge { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 10px; }
   .b-now { background: #e2f4ea; color: var(--ok); }
-  .b-soon { background: #fdf0dc; color: var(--warn); }
+  .b-prev { background: var(--mist); color: var(--teal-2); }
   .ver ul { margin: 0; padding-left: 20px; color: var(--ink-soft); }
   .ver li { margin: 4px 0; }
   @media (max-width: 900px) { .versions { grid-template-columns: 1fr; } }
@@ -163,10 +183,11 @@
   <div class="wrap">
     <a class="brand" href="./">
       <img src="icon.png" alt="" width="34" height="34">
-      Inventa <small>by Jooble Soft</small>
+      <span class="script">Inventa</span> <small>by Jooble Soft</small>
     </a>
     <nav>
       <a class="hide-sm" href="#features"><span lang="ru">Возможности</span><span lang="en">Features</span></a>
+      <a class="hide-sm" href="#screens"><span lang="ru">Скриншоты</span><span lang="en">Screenshots</span></a>
       <a class="hide-sm" href="#install"><span lang="ru">Установка</span><span lang="en">Install</span></a>
       <a href="https://fwizard.pages.dev/"><span lang="ru">Forecasting Wizard</span><span lang="en">Forecasting Wizard</span></a>
       <span class="lang" role="group" aria-label="Language">
@@ -180,10 +201,10 @@
 <div class="hero">
   <div class="wrap">
     <div>
-      <span class="eyebrow"><b></b>
-        <span lang="ru">Для закупщиков и товароведов · Windows</span>
-        <span lang="en">For buyers and merchandisers · Windows</span>
-      </span>
+      <a class="eyebrow" href="#whats-new" style="text-decoration:none"><b></b>
+        <span lang="ru">Вышла версия 1.4.1: новый вид и перетаскивание файлов</span>
+        <span lang="en">Version 1.4.1 is out: new look and drag and drop</span>
+      </a>
       <h1>
         <span lang="ru">Документы поставщика <em>под контролем</em></span>
         <span lang="en">Supplier paperwork, <em>checked for you</em></span>
@@ -200,40 +221,14 @@
         <a class="btn btn-ghost" href="#features"><span lang="ru">Что умеет</span><span lang="en">What it does</span></a>
       </div>
       <div class="req">
-        <span lang="ru">Windows 10 или 11 · около 42 МБ · версия 1.4.0 · обновляется сама</span>
-        <span lang="en">Windows 10 or 11 · about 42 MB · version 1.4.0 · updates itself</span>
+        <span lang="ru">Windows 10 или 11 · около 43 МБ · версия 1.4.1 · обновляется сама</span>
+        <span lang="en">Windows 10 or 11 · about 43 MB · version 1.4.1 · updates itself</span>
       </div>
     </div>
 
-    <div class="win" aria-hidden="true">
-      <div class="win-bar"><img src="icon.png" alt="">Inventa — <span lang="ru">Сверка с заказом</span><span lang="en">Order check</span><span class="dots">— ▢ ✕</span></div>
-      <div class="win-body">
-        <div class="chips">
-          <span class="chip"><i>PDF</i> Proforma_PF-2611.pdf</span>
-          <span class="chip"><i lang="ru">Прайс</i><i lang="en">Price list</i> Bohemia 2026</span>
-          <span class="chip"><i lang="ru">Заказ</i><i lang="en">Order</i> order_nov.xlsx</span>
-        </div>
-        <table class="tbl">
-          <thead><tr>
-            <th lang="ru">Код</th><th lang="en">Code</th>
-            <th class="num opt" lang="ru">Заказ</th><th class="num opt" lang="en">Ordered</th>
-            <th class="num opt" lang="ru">В Proforma</th><th class="num opt" lang="en">In Proforma</th>
-            <th lang="ru">Статус</th><th lang="en">Status</th>
-          </tr></thead>
-          <tbody>
-            <tr><td class="code">1SI97/00000/630</td><td class="num opt">48</td><td class="num opt">48</td><td><span class="tag t-ok" lang="ru">совпадает</span><span class="tag t-ok" lang="en">match</span></td></tr>
-            <tr><td class="code">1SJ60/00000/380</td><td class="num opt">36</td><td class="num opt">24</td><td><span class="tag t-warn" lang="ru">кол-во меньше</span><span class="tag t-warn" lang="en">qty lower</span></td></tr>
-            <tr><td class="code">179300156</td><td class="num opt">12</td><td class="num opt">12</td><td><span class="tag t-warn" lang="ru">цена выше +4,2%</span><span class="tag t-warn" lang="en">price +4.2%</span></td></tr>
-            <tr><td class="code">2941-001</td><td class="num opt">6</td><td class="num opt">—</td><td><span class="tag t-bad" lang="ru">нет у поставщика</span><span class="tag t-bad" lang="en">missing</span></td></tr>
-            <tr><td class="code">1KD22/00000/250</td><td class="num opt">—</td><td class="num opt">18</td><td><span class="tag t-bad" lang="ru">лишнее</span><span class="tag t-bad" lang="en">not ordered</span></td></tr>
-          </tbody>
-        </table>
-        <div class="win-foot">
-          <span lang="ru">Строк: <b>128</b> · расхождений: <b>9</b></span><span lang="en">Rows: <b>128</b> · differences: <b>9</b></span>
-          <span lang="ru">Итог документа сходится ✓</span><span lang="en">Document total matches ✓</span>
-        </div>
-      </div>
-    </div>
+    <figure class="shot">
+      <img src="screens/docs.png" width="1000" height="790" alt="Inventa: экран «Proforma / Invoice → Excel, сверка с заказом»">
+    </figure>
   </div>
 </div>
 
@@ -283,6 +278,54 @@
   </div>
 </section>
 
+<section id="screens" style="padding-top:0">
+  <div class="wrap">
+    <div class="kicker"><span lang="ru">Скриншоты</span><span lang="en">Screenshots</span></div>
+    <h2><span lang="ru">Так выглядит программа</span><span lang="en">What the app looks like</span></h2>
+    <p class="sub">
+      <span lang="ru">Три экрана: выбор задачи, документы поставщика и фото из каталогов. Файлы можно добавлять кнопкой или просто перетащить мышью.</span>
+      <span lang="en">Three screens: choosing a task, supplier documents, and catalogue photos. Add files with a button or simply drag them in. The app interface is in Russian.</span>
+    </p>
+    <div class="gallery">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected="true" data-shot="0"><span lang="ru">Главная</span><span lang="en">Home</span></button>
+        <button type="button" role="tab" aria-selected="false" data-shot="1"><span lang="ru">Документы</span><span lang="en">Documents</span></button>
+        <button type="button" role="tab" aria-selected="false" data-shot="2"><span lang="ru">Фото</span><span lang="en">Photos</span></button>
+      </div>
+      <figure class="shot" data-panel="0">
+        <img src="screens/home.png" width="1000" height="790" loading="lazy" alt="Inventa: выбор задачи">
+      </figure>
+      <figure class="shot" data-panel="1" hidden>
+        <img src="screens/docs.png" width="1000" height="790" loading="lazy" alt="Inventa: Proforma / Invoice в Excel и сверка с заказом">
+      </figure>
+      <figure class="shot" data-panel="2" hidden>
+        <img src="screens/photos.png" width="1000" height="790" loading="lazy" alt="Inventa: фото из каталогов">
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="band" style="background:var(--paper);padding-top:0">
+  <div class="wrap motion">
+    <div>
+      <div class="kicker"><span lang="ru">Новое в 1.4.1</span><span lang="en">New in 1.4.1</span></div>
+      <h2><span lang="ru">Перетащите файлы, программа отзовётся</span><span lang="en">Drop your files in and the app responds</span></h2>
+      <p class="sub">
+        <span lang="ru">Документы, заказы и прайсы можно перетащить из Проводника прямо в списки, даже целой папкой. Интерфейс стал живым.</span>
+        <span lang="en">Drag documents, orders and price lists from Explorer straight into the lists, even a whole folder. The interface now feels alive.</span>
+      </p>
+      <ul>
+        <li><span lang="ru"><b>Поле «вдыхает»</b>, когда над ним файл, и подпрыгивает при сбросе. Чем тяжелее файл, тем сильнее отскок.</span><span lang="en"><b>The drop zone “breathes in”</b> when a file hovers over it and bounces on drop. The heavier the file, the bigger the bounce.</span></li>
+        <li><span lang="ru"><b>Кнопки пружинят</b>, карточки и поля плавно подсвечиваются.</span><span lang="en"><b>Buttons spring back</b>, cards and fields light up smoothly.</span></li>
+        <li><span lang="ru"><b>Новые строки</b> в списке коротко вспыхивают, чтобы было видно, что добавилось.</span><span lang="en"><b>New rows</b> flash briefly so you can see what was added.</span></li>
+      </ul>
+    </div>
+    <figure class="shot">
+      <video src="screens/motion.mp4" poster="screens/motion-poster.png" width="600" height="474" autoplay muted loop playsinline preload="metadata" aria-label="Анимация перетаскивания файлов в Inventa"></video>
+    </figure>
+  </div>
+</section>
+
 <section class="band">
   <div class="wrap">
     <div>
@@ -325,7 +368,7 @@
       </div>
       <div class="step">
         <h3><span lang="ru">Выберите задачу</span><span lang="en">Pick a task</span></h3>
-        <p><span lang="ru">«Proforma / Invoice → Excel» или «Фото из каталогов», добавьте файлы.</span><span lang="en">“Proforma / Invoice → Excel” or “Photos from catalogues”, then add your files.</span></p>
+        <p><span lang="ru">«Proforma / Invoice → Excel» или «Фото из каталогов», затем перетащите файлы в окно.</span><span lang="en">“Proforma / Invoice → Excel” or “Photos from catalogues”, then drag your files into the window.</span></p>
       </div>
       <div class="step">
         <h3><span lang="ru">Заберите результат</span><span lang="en">Collect the result</span></h3>
@@ -339,24 +382,26 @@
   </div>
 </section>
 
-<section style="padding-top:0">
+<section id="whats-new" style="padding-top:0">
   <div class="wrap">
     <div class="kicker"><span lang="ru">Версии</span><span lang="en">Releases</span></div>
     <h2><span lang="ru">Что нового</span><span lang="en">What’s new</span></h2>
     <div class="versions">
       <div class="ver">
-        <header><h3>1.4.0</h3><span class="badge b-now" lang="ru">текущая</span><span class="badge b-now" lang="en">current</span></header>
+        <header><h3>1.4.1</h3><span class="badge b-now" lang="ru">текущая</span><span class="badge b-now" lang="en">current</span></header>
+        <ul>
+          <li><span lang="ru">Новый вид: бирюзовая шапка, скруглённые карточки, шрифт Manrope</span><span lang="en">New look: teal header, rounded cards, Manrope font</span></li>
+          <li><span lang="ru">Перетаскивание файлов и папок мышью в любые списки и поля</span><span lang="en">Drag and drop files and folders into any list or field</span></li>
+          <li><span lang="ru">Живые анимации: пружинящие кнопки, «тяжёлый» отскок при сбросе файла</span><span lang="en">Lively animations: springy buttons, a “weighted” bounce on drop</span></li>
+          <li><span lang="ru">Исправлены обновление и установка поверх старой версии: установщик сам закрывает программу и убирает прежнюю</span><span lang="en">Fixed updating and installing over an old version: the installer closes the app and removes the previous one itself</span></li>
+        </ul>
+      </div>
+      <div class="ver">
+        <header><h3>1.4.0</h3><span class="badge b-prev" lang="ru">предыдущая</span><span class="badge b-prev" lang="en">previous</span></header>
         <ul>
           <li><span lang="ru">Сверка ваших заказов поставщику с Proforma и Invoice</span><span lang="en">Check your supplier orders against Proforma and Invoice</span></li>
           <li><span lang="ru">Заказ можно сверить и только с прайсом</span><span lang="en">An order can also be checked against the price list alone</span></li>
           <li><span lang="ru">Автообновление прямо из программы</span><span lang="en">Built-in automatic updates</span></li>
-        </ul>
-      </div>
-      <div class="ver">
-        <header><h3>1.4.1</h3><span class="badge b-soon" lang="ru">скоро</span><span class="badge b-soon" lang="en">coming soon</span></header>
-        <ul>
-          <li><span lang="ru">Файлы можно перетаскивать в окно мышкой</span><span lang="en">Drag and drop files straight into the window</span></li>
-          <li><span lang="ru">Придёт само через автообновление</span><span lang="en">Arrives on its own through auto-update</span></li>
         </ul>
       </div>
     </div>
@@ -383,7 +428,7 @@
 
 <footer>
   <div class="wrap">
-    <span>Inventa · Jooble Soft · <span lang="ru">Пример в окне выше на выдуманных данных</span><span lang="en">The window above uses made-up data</span></span>
+    <span><span class="script" style="font-size:22px;color:var(--teal)">Inventa</span> · Jooble Soft · <span lang="ru">На скриншотах выдуманные данные</span><span lang="en">Screenshots use made-up data</span></span>
     <span><span lang="ru">Другие программы студии:</span><span lang="en">More from the studio:</span> <a href="https://fwizard.pages.dev/">Forecasting Wizard</a></span>
   </div>
 </footer>
@@ -406,6 +451,17 @@
     document.querySelectorAll('[data-set-lang]').forEach(function (b) {
       b.addEventListener('click', function () { setLang(b.getAttribute('data-set-lang')); });
     });
+    var tabs = document.querySelectorAll('[data-shot]');
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        var n = t.getAttribute('data-shot');
+        tabs.forEach(function (x) { x.setAttribute('aria-selected', x === t ? 'true' : 'false'); });
+        document.querySelectorAll('[data-panel]').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== n; });
+      });
+    });
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.querySelectorAll('video[autoplay]').forEach(function (v) { v.removeAttribute('autoplay'); v.pause(); v.controls = true; });
+    }
   })();
 </script>
 </body>
