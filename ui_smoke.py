@@ -22,6 +22,13 @@ def main():
         app.update()
         res[key] = time.perf_counter() - t
         print(f'show {key}: {res[key] * 1000:.0f} ms')
+    # где именно уходит время: Python-часть, раскладка, отрисовка
+    for key in ('docs', 'photos', 'docs'):
+        t = time.perf_counter(); app.show(key); a = time.perf_counter()
+        app.update_idletasks(); b = time.perf_counter()
+        app.update(); c = time.perf_counter()
+        print(f'  {key}: show() {1000*(a-t):.0f} ms, idle {1000*(b-a):.0f} ms, update {1000*(c-b):.0f} ms')
+    calibrate(app)
     d = app.built['docs']
     app.show('docs')
     app.update()
@@ -38,6 +45,22 @@ def main():
     app.destroy()
     if max(res.values()) > 1.0:
         sys.exit('screen switch is too slow')
+
+
+def calibrate(app):
+    """Эталон: такой же по числу виджетов экран из простых меток — сколько он рисуется на этой машине."""
+    import tkinter as tk
+    f = tk.Frame(app.body)
+    for i in range(40):
+        tk.Label(f, text=f'метка {i}').pack()
+    t = time.perf_counter()
+    f.pack(); app.update()
+    print(f'  plain 40 labels map: {1000*(time.perf_counter()-t):.0f} ms')
+    f.pack_forget(); app.update()
+    t = time.perf_counter()
+    f.pack(); app.update()
+    print(f'  plain 40 labels re-map: {1000*(time.perf_counter()-t):.0f} ms')
+    f.destroy(); app.update()
 
 
 def motion_buttons(app):
