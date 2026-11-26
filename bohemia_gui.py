@@ -313,6 +313,7 @@ class App(tk.Tk):
         self.show_home()
         self.after(100, self.poll)
         if getattr(sys, 'frozen', False):
+            self.after(300, self.after_update)
             self.after(1500, self.check_updates)    # тихая проверка при запуске собранной программы
 
     def place_window(self):
@@ -355,6 +356,24 @@ class App(tk.Tk):
         return f
 
     # ---- обновления
+    def after_update(self):
+        """Проверка после автообновления: версия сменилась или нет (тогда — журнал установщика)."""
+        try:
+            res = updater.pending_result()
+        except Exception:
+            return
+        if not res:
+            return
+        if res[0] == 'ok':
+            self.upd_label.configure(text=f'Обновлено до версии {res[1]}')
+            return
+        if messagebox.askyesno(APP_TITLE, f'Обновление до версии {res[1]} не установилось '
+                                          f'(сейчас {updater.current_version()}).\n\n'
+                                          f'Конец журнала установки:\n{res[2][-1200:]}\n\n'
+                                          f'Открыть страницу загрузки, чтобы поставить вручную?'):
+            import webbrowser
+            webbrowser.open(f'https://github.com/{updater.REPO}/releases/latest')
+
     def check_updates(self, manual=False):
         self.upd_btn.configure(state='disabled')
         self.upd_label.configure(text='Проверяю…' if manual else '')
@@ -403,6 +422,7 @@ class App(tk.Tk):
             return
         self.upd_btn.configure(state='disabled')
         self.upd_label.configure(text='Скачиваю обновление…')
+        self._upd_version = rel['version']
 
         def worker():
             try:
@@ -513,10 +533,15 @@ class App(tk.Tk):
                 elif kind == 'upd_ready':
                     self.upd_label.configure(text='Устанавливаю…')
                     try:
-                        updater.run_installer(val)
-                        self.after(500, self.destroy)
+                        updater.run_installer(val, self._upd_version)
                     except Exception as e:
-                        messagebox.showerror(APP_TITLE, f'Не удалось запустить установщик: {e}')
+                        self.upd_btn.configure(state='normal')
+                        self.upd_label.configure(text='')
+                        messagebox.showerror(APP_TITLE, f'Не удалось запустить установщик: {e}\n\n'
+                                                        f'Файл установщика: {val}\nЕго можно запустить вручную.')
+                    else:
+                        # выходим совсем, чтобы освободить Inventa.exe для замены
+                        self.after(300, lambda: (self.destroy(), os._exit(0)))
                 elif kind == 'upd_fail':
                     self.upd_btn.configure(state='normal')
                     self.upd_label.configure(text='')

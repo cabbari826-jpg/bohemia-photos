@@ -78,8 +78,86 @@ def download(url, progress=None):
     return dest
 
 
-def run_installer(path):
-    """Запускает установщик тихо; он сам закроет программу, обновит и запустит её снова."""
-    flags = 0x00000008 | 0x00000200 if sys.platform.startswith('win') else 0   # DETACHED | NEW_PROCESS_GROUP
-    subprocess.Popen([path, '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'],
-                     creationflags=flags, close_fds=True)
+def _state_dir():
+    d = os.path.join(os.environ.get('LOCALAPPDATA') or tempfile.gettempdir(), 'Inventa')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+MARK = 'update.json'
+LOG_NAME = 'Inventa-update.log'
+
+
+def _writable(folder):
+    try:
+        t = os.path.join(folder, '.inventa-write-test')
+        with open(t, 'w'):
+            pass
+        os.remove(t)
+        return True
+    except OSError:
+        return False
+
+
+def installer_args(folder, log, all_users=False):
+    a = ['/SP-', '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/NOCANCEL',
+         f'/LOG={log}', f'/DIR={folder}']
+    if all_users:
+        a.append('/ALLUSERS')
+    return a
+
+
+def _quote(a):
+    # /DIR=C:\Program Files\Inventa -> "/DIR=C:\Program Files\Inventa" (так понимает Inno Setup)
+    return f'"{a}"' if ' ' in a else a
+
+
+def run_installer(path, version=''):
+    """Запускает установщик тихо в ту же папку, где стоит программа; он закроет программу,
+    обновит и запустит её снова. Ход установки пишется в журнал %TEMP%\\Inventa-update.log;
+    при следующем запуске программа проверит, что версия действительно сменилась (pending_result)."""
+    folder = os.path.dirname(sys.executable)
+    log = os.path.join(tempfile.gettempdir(), LOG_NAME)
+    # программа стоит в Program Files (ставили «для всех») — без прав администратора туда не записать
+    admin = not _writable(folder)
+    args = installer_args(folder, log, admin)
+    try:
+        with open(os.path.join(_state_dir(), MARK), 'w', encoding='utf-8') as f:
+            json.dump(dict(target=version, old=current_version(), log=log, folder=folder), f)
+    except OSError:
+        pass
+    if sys.platform.startswith('win'):
+        import ctypes
+        # как двойной щелчок по файлу: отдельный процесс, не связанный с программой; для Program Files — запрос UAC
+        rc = ctypes.windll.shell32.ShellExecuteW(None, 'runas' if admin else 'open', path,
+                                                 ' '.join(_quote(a) for a in args), None, 1)
+        if rc > 32:
+            return
+        if admin:
+            raise OSError('нужны права администратора: программа установлена в ' + folder)
+    subprocess.Popen([path] + args, close_fds=True)
+
+
+def pending_result():
+    """После обновления: None — проверять нечего; ('ok', версия) или ('fail', версия, хвост журнала)."""
+    p = os.path.join(_state_dir(), MARK)
+    try:
+        with open(p, encoding='utf-8') as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    try:
+        os.remove(p)
+    except OSError:
+        pass
+    target = d.get('target') or ''
+    if target and parse(current_version()) >= parse(target):
+        return ('ok', current_version())
+    tail = ''
+    try:
+        with open(d.get('log') or '', encoding='utf-8', errors='replace') as f:
+            lines = [ln.rstrip() for ln in f if ln.strip()]
+        tail = '\n'.join(lines[-12:])
+    except OSError:
+        tail = 'журнал установки не найден — установщик, похоже, не запустился (антивирус?)'
+    return ('fail', target, tail)

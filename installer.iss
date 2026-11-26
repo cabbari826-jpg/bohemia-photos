@@ -26,6 +26,8 @@ OutputBaseFilename=Inventa-Setup
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
+; обновление программы, поставленной «для всех» в Program Files, запускается с /ALLUSERS
+PrivilegesRequiredOverridesAllowed=commandline
 WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
@@ -53,18 +55,33 @@ Name: "{autodesktop}\Inventa"; Filename: "{app}\Inventa.exe"; Tasks: desktopicon
 Filename: "{app}\Inventa.exe"; Description: "Запустить"; Flags: nowait postinstall
 
 [Code]
-// Старая версия (BohemiaPhotos.exe) сама закрывается после запуска обновления — ждём, пока файл освободится
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+// Программа сама закрывается после запуска обновления — ждём (до 20 с), пока её exe освободится
+function WaitUnlocked(f: String): Boolean;
 var
   i: Integer;
-  f: String;
 begin
-  Result := '';
-  f := ExpandConstant('{app}\BohemiaPhotos.exe');
-  for i := 1 to 30 do
+  Result := True;
+  for i := 1 to 40 do
   begin
-    if (not FileExists(f)) or DeleteFile(f) then
-      Break;
+    if not FileExists(f) then Exit;
+    if RenameFile(f, f + '.upd') then
+    begin
+      RenameFile(f + '.upd', f);
+      Exit;
+    end;
     Sleep(500);
   end;
+  Result := False;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  old: String;
+begin
+  Result := '';
+  old := ExpandConstant('{app}\BohemiaPhotos.exe');
+  if WaitUnlocked(old) then
+    DeleteFile(old);
+  if not WaitUnlocked(ExpandConstant('{app}\Inventa.exe')) then
+    Log('Inventa.exe всё ещё занят — пробуем закрыть через Restart Manager');
 end;

@@ -31,6 +31,29 @@ jobs:
           & $iscc installer.iss
           # копия под старым именем: версии 1.2.x (ещё Bohemia Photos) ищут в релизе именно этот файл
           Copy-Item dist/Inventa-Setup.exe dist/BohemiaPhotos-Setup.exe
+      # Проверка обновления как из программы: ставим прошлый релиз, запускаем его и ставим новый поверх
+      - name: Update test
+        shell: pwsh
+        run: |
+          $old = "$env:RUNNER_TEMP\old-setup.exe"
+          Invoke-WebRequest "https://github.com/${{ github.repository }}/releases/latest/download/Inventa-Setup.exe" -OutFile $old
+          Start-Process $old -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          $dir = "$env:LOCALAPPDATA\Programs\Inventa"
+          $exe = "$dir\Inventa.exe"
+          if (-not (Test-Path $exe)) { Get-ChildItem $env:LOCALAPPDATA\Programs -Recurse -Depth 1 | Out-String | Write-Host; throw "old version not installed" }
+          Write-Host "old:" (Get-Item $exe).VersionInfo.FileVersion
+          $app = Start-Process $exe -PassThru
+          Start-Sleep 8
+          $log = "$env:RUNNER_TEMP\upd.log"
+          $p = Start-Process dist\Inventa-Setup.exe -ArgumentList '/SP-','/SILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS','/NOCANCEL',"/LOG=$log","/DIR=$dir" -PassThru
+          Start-Sleep 2
+          Stop-Process -Id $app.Id -ErrorAction SilentlyContinue   # программа сама выходит после запуска установщика
+          $p.WaitForExit(180000) | Out-Null
+          Get-Content $log -Tail 25
+          $v = (Get-Item $exe).VersionInfo.FileVersion
+          Write-Host "new:" $v "exit:" $p.ExitCode
+          Get-Process Inventa -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (-not $v.StartsWith($env:APP_VERSION)) { throw "update did not replace Inventa.exe ($v)" }
       - uses: actions/upload-artifact@v4
         with:
           name: Inventa
