@@ -1,11 +1,15 @@
-"""Оформление Inventa в стиле сайта: бирюзовая шапка, светлый фон, белые карточки, янтарные кнопки.
+"""Оформление Inventa в стиле сайта: бирюзовая шапка, светлый фон, скруглённые (squircle) карточки,
+поля и кнопки, шрифт Manrope, название — рукописным Pacifico.
 
-Всё на стандартном tkinter/ttk (тема clam), без сторонних библиотек.
+Скругления рисуются картинками (PIL, со сглаживанием) и подключаются как элементы темы ttk.
+Шрифты лежат в папке fonts (лицензия SIL OFL) и подключаются только для этой программы.
 """
 import os
 import sys
 import tkinter as tk
 from tkinter import ttk, font as tkfont
+
+from PIL import Image, ImageDraw, ImageTk
 
 # палитра сайта
 INK = '#0f2f38'
@@ -13,20 +17,39 @@ INK_SOFT = '#46636b'
 MUTED = '#7b9198'
 TEAL = '#134e5e'
 TEAL_2 = '#1d6a7c'
-TEAL_DARK = '#0f3e4b'
 MIST = '#e3f1f4'
 PAPER = '#f7fbfc'
 CARD = '#ffffff'
 LINE = '#d3e4e8'
-FIELD = '#f4f8f9'
+FIELD = '#f3f8f9'
 AMBER = '#f5a524'
-AMBER_HOVER = '#e8961a'
+AMBER_HOVER = '#eb9612'
 AMBER_INK = '#3a2500'
 OK = '#2f8f5b'
 WARN = '#c9791a'
 BAD = '#c0423a'
 
-F = {}          # шрифты: F['body'], F['h1'] …
+F = {}            # шрифты: F['body'], F['h1'] …
+_IMAGES = []      # ссылки на картинки, чтобы их не удалил сборщик мусора
+S = 1.0           # масштаб экрана (Windows 125 % -> 1.25)
+
+
+def _base():
+    return getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+
+
+def load_fonts():
+    """Подключает шрифты из папки fonts только для этой программы (Windows). До создания окна."""
+    folder = os.path.join(_base(), 'fonts')
+    if not os.path.isdir(folder) or not sys.platform.startswith('win'):
+        return
+    try:
+        import ctypes
+        for f in os.listdir(folder):
+            if f.lower().endswith(('.ttf', '.otf')):
+                ctypes.windll.gdi32.AddFontResourceExW(os.path.join(folder, f), 0x10, 0)   # FR_PRIVATE
+    except Exception:
+        pass
 
 
 def _family(root, names):
@@ -37,14 +60,71 @@ def _family(root, names):
     return 'TkDefaultFont'
 
 
+# ---------------------------------------------------------------- скругления
+def _squircle(w, h, r, n=4.0, steps=24):
+    """Контур прямоугольника со «сквиркл»-углами (суперэллипс), точки по часовой стрелке."""
+    import math
+    r = min(r, w / 2, h / 2)
+    pts = []
+    corners = ((w - r, r, 0), (w - r, h - r, 1), (r, h - r, 2), (r, r, 3))
+    for cx, cy, q in corners:
+        for i in range(steps + 1):
+            t = (q - 1) * math.pi / 2 + i * (math.pi / 2) / steps
+            c, s = math.cos(t), math.sin(t)
+            x = cx + r * math.copysign(abs(c) ** (2 / n), c)
+            y = cy + r * math.copysign(abs(s) ** (2 / n), s)
+            pts.append((x, y))
+    return pts
+
+
+def round_image(w, h, r, fill, outer, border=None, bw=1, k=4):
+    """Картинка w×h: скруглённая плашка цвета fill (с рамкой border) на фоне outer."""
+    W, H = w * k, h * k
+    img = Image.new('RGB', (W, H), outer)
+    d = ImageDraw.Draw(img)
+    if border:
+        d.polygon(_squircle(W - 1, H - 1, r * k), fill=border)
+        inset = bw * k
+        pts = [(x + inset, y + inset) for x, y in _squircle(W - 1 - 2 * inset, H - 1 - 2 * inset, (r - bw) * k)]
+        d.polygon(pts, fill=fill)
+    else:
+        d.polygon(_squircle(W - 1, H - 1, r * k), fill=fill)
+    return img.resize((w, h), Image.LANCZOS)
+
+
+def _photo(root, img):
+    p = ImageTk.PhotoImage(img, master=root)
+    _IMAGES.append(p)
+    return p
+
+
+def _px(v):
+    return max(1, int(round(v * S)))
+
+
+def _elem(style, root, name, r, fill, outer, border=None, states=(), size=None):
+    """Элемент темы из скруглённой картинки, растягиваемой по 9 частям."""
+    sz = size or 2 * _px(r) + 8
+    rr = _px(r)
+    base = _photo(root, round_image(sz, sz, rr, fill, outer, border))
+    st = []
+    for spec, f, b in states:
+        st.append((spec, _photo(root, round_image(sz, sz, rr, f, outer, b))))
+    style.element_create(name, 'image', base, *st, border=rr + 1, padding=0, sticky='nsew')
+
+
+# ---------------------------------------------------------------- тема
 def apply(root):
-    sans = _family(root, ['Segoe UI Variable Text', 'Segoe UI', 'Inter', 'Helvetica Neue', 'Arial'])
+    global S
+    S = max(1.0, root.winfo_fpixels('1i') / 96)
+    sans = _family(root, ['Manrope', 'Segoe UI', 'Inter', 'Arial'])
+    script = _family(root, ['Pacifico', 'Segoe Script', 'Brush Script MT'])
     mono = _family(root, ['Cascadia Mono', 'Consolas', 'JetBrains Mono', 'DejaVu Sans Mono', 'Courier New'])
     F.update(
         body=(sans, 10), small=(sans, 9), bold=(sans, 10, 'bold'),
-        h1=(sans, 20, 'bold'), h2=(sans, 15, 'bold'), h3=(sans, 12, 'bold'),
-        brand=(sans, 14, 'bold'), eyebrow=(sans, 8, 'bold'), btn=(sans, 10, 'bold'),
-        big=(sans, 11, 'bold'), mono=(mono, 9),
+        h1=(sans, 21, 'bold'), h2=(sans, 16, 'bold'), h3=(sans, 12, 'bold'),
+        brand=(script, 18), eyebrow=(sans, 8, 'bold'), btn=(sans, 10, 'bold'),
+        big=(sans, 11, 'bold'), mono=(mono, 9), icon=(sans, 16),
     )
     for name in ('TkDefaultFont', 'TkTextFont', 'TkMenuFont'):
         try:
@@ -52,8 +132,6 @@ def apply(root):
         except tk.TclError:
             pass
     root.configure(bg=PAPER)
-    root.option_add('*Listbox.font', F['body'])
-    root.option_add('*TCombobox*Listbox.font', F['body'])
 
     s = ttk.Style(root)
     s.theme_use('clam')
@@ -61,72 +139,101 @@ def apply(root):
                 lightcolor=PAPER, darkcolor=PAPER, troughcolor=MIST, focuscolor=TEAL_2,
                 selectbackground=MIST, selectforeground=INK, insertcolor=INK)
     s.configure('TFrame', background=PAPER)
-    s.configure('Card.TFrame', background=CARD)
-    s.configure('Header.TFrame', background=TEAL)
+    s.configure('Flat.TFrame', background=CARD)
     s.configure('TLabel', background=PAPER, foreground=INK)
-    s.configure('Card.TLabel', background=CARD, foreground=INK)
-    s.configure('CardMuted.TLabel', background=CARD, foreground=INK_SOFT)
     s.configure('Muted.TLabel', background=PAPER, foreground=INK_SOFT)
     s.configure('H1.TLabel', background=PAPER, foreground=INK, font=F['h1'])
     s.configure('H2.TLabel', background=PAPER, foreground=INK, font=F['h2'])
-    s.configure('CardH.TLabel', background=CARD, foreground=INK, font=F['h3'])
-    s.configure('Step.TLabel', background=CARD, foreground=INK, font=F['bold'])
     s.configure('Eyebrow.TLabel', background=PAPER, foreground=TEAL_2, font=F['eyebrow'])
     s.configure('Status.TLabel', background=PAPER, foreground=INK_SOFT, font=F['bold'])
 
-    def button(name, bg, fg, hover, border=None, pad=(16, 8), font=F['btn']):
-        s.configure(name, background=bg, foreground=fg, bordercolor=border or bg, lightcolor=bg, darkcolor=bg,
-                    padding=pad, font=font, relief='flat' if border is None else 'solid', borderwidth=1,
-                    focusthickness=0, focuscolor=bg)
-        s.map(name,
-              background=[('disabled', '#e9eff1'), ('pressed', hover), ('active', hover)],
-              lightcolor=[('disabled', '#e9eff1'), ('active', hover)],
-              darkcolor=[('disabled', '#e9eff1'), ('active', hover)],
-              bordercolor=[('disabled', '#dfe8eb'), ('active', border or hover)],
-              foreground=[('disabled', '#9fb2b8')])
+    # карточки и поля
+    _elem(s, root, 'Card.bg', 16, CARD, PAPER, LINE)
+    _elem(s, root, 'CardHover.bg', 16, CARD, PAPER, TEAL_2)
+    _elem(s, root, 'Field.bg', 11, FIELD, CARD, LINE)
+    _elem(s, root, 'FieldP.bg', 11, FIELD, PAPER, LINE)
+    for name, el, pad in (('Card.TFrame', 'Card.bg', _px(18)), ('CardHover.TFrame', 'CardHover.bg', _px(18)),
+                          ('Field.TFrame', 'Field.bg', (_px(10), _px(6))),
+                          ('FieldP.TFrame', 'FieldP.bg', (_px(12), _px(8)))):
+        s.layout(name, [(el, {'sticky': 'nsew'})])
+        s.configure(name, padding=pad, background=CARD if 'Field' not in name else FIELD)
+    s.configure('Card.TFrame', background=CARD)
+    s.configure('CardHover.TFrame', background=CARD)
 
-    button('TButton', CARD, TEAL, MIST, border=LINE, pad=(12, 6))
-    button('Accent.TButton', AMBER, AMBER_INK, AMBER_HOVER, pad=(20, 9), font=F['big'])
-    button('Teal.TButton', TEAL, '#ffffff', TEAL_2, pad=(16, 8))
-    button('Ghost.TButton', TEAL, '#d9ecf0', TEAL_2, border='#2f6d7d', pad=(12, 5), font=F['small'])
-    button('Back.TButton', PAPER, TEAL, MIST, pad=(8, 5))
-    button('Link.TButton', CARD, TEAL_2, MIST, pad=(10, 6))
+    # кнопки: (стиль, фон снаружи, цвет, при наведении, рамка, текст, отступы, шрифт)
+    buttons = [
+        ('TButton', CARD, CARD, MIST, LINE, TEAL, (_px(14), _px(7)), F['btn']),
+        ('Paper.TButton', PAPER, CARD, MIST, LINE, TEAL, (_px(14), _px(7)), F['btn']),
+        ('Accent.TButton', PAPER, AMBER, AMBER_HOVER, None, AMBER_INK, (_px(22), _px(10)), F['big']),
+        ('AccentCard.TButton', CARD, AMBER, AMBER_HOVER, None, AMBER_INK, (_px(20), _px(9)), F['big']),
+        ('Ghost.TButton', TEAL, TEAL, TEAL_2, '#3d7f8f', '#e3f1f4', (_px(14), _px(6)), F['small']),
+        ('Back.TButton', PAPER, PAPER, MIST, None, TEAL, (_px(10), _px(6)), F['btn']),
+    ]
+    for name, outer, fill, hover, border, fg, pad, fnt in buttons:
+        el = name.replace('.', '_') + '.bg'
+        _elem(s, root, el, 10, fill, outer, border,
+              states=[('disabled', '#edf2f4', '#e1e9ec'), ('pressed', hover, border or hover),
+                      ('active', hover, border or hover)])
+        s.layout(name, [(el, {'sticky': 'nsew', 'children': [
+            ('Button.padding', {'sticky': 'nsew', 'children': [('Button.label', {'sticky': 'nsew'})]})]})])
+        s.configure(name, foreground=fg, padding=pad, font=fnt, anchor='center', background=outer)
+        s.map(name, foreground=[('disabled', '#9fb2b8')])
 
-    s.configure('TEntry', fieldbackground=FIELD, foreground=INK, bordercolor=LINE, lightcolor=FIELD,
-                darkcolor=FIELD, padding=(8, 6))
-    s.map('TEntry', bordercolor=[('focus', TEAL_2)], lightcolor=[('focus', FIELD)])
-    s.configure('Horizontal.TProgressbar', troughcolor=MIST, background=AMBER, bordercolor=MIST,
-                lightcolor=AMBER, darkcolor=AMBER, thickness=8)
-    s.configure('Vertical.TScrollbar', background=MIST, troughcolor=FIELD, bordercolor=FIELD,
-                arrowcolor=INK_SOFT, lightcolor=MIST, darkcolor=MIST)
+    # поле ввода
+    _elem(s, root, 'REntry.field', 10, FIELD, CARD, LINE, states=[('focus', FIELD, TEAL_2)])
+    s.layout('TEntry', [('REntry.field', {'sticky': 'nsew', 'children': [
+        ('Entry.padding', {'sticky': 'nsew', 'children': [('Entry.textarea', {'sticky': 'nsew'})]})]})])
+    s.configure('TEntry', padding=(_px(10), _px(7)), foreground=INK, fieldbackground=FIELD)
+
+    # полоса прогресса: скруглённые дорожка и заливка
+    h = _px(10)
+    _elem(s, root, 'Round.trough', h // 2, MIST, PAPER, size=h + 8)
+    _elem(s, root, 'Round.pbar', h // 2, AMBER, MIST, size=h + 8)
+    s.layout('Horizontal.TProgressbar', [('Round.trough', {'sticky': 'nsew', 'children': [
+        ('Round.pbar', {'side': 'left', 'sticky': 'ns'})]})])
+    s.configure('Horizontal.TProgressbar', thickness=h)
     return s
 
 
-def card(parent, **kw):
-    """Белая карточка с тонкой рамкой."""
-    return tk.Frame(parent, bg=CARD, highlightbackground=LINE, highlightcolor=LINE, highlightthickness=1, **kw)
+# ---------------------------------------------------------------- готовые детали
+def card(parent, hover=False, **kw):
+    """Скруглённая белая карточка (ttk.Frame)."""
+    return ttk.Frame(parent, style='Card.TFrame', **kw)
 
 
 def badge(parent, text, bg=TEAL, fg='#ffffff', size=24, parent_bg=CARD):
     """Кружок с номером шага."""
-    c = tk.Canvas(parent, width=size, height=size, bg=parent_bg, highlightthickness=0, bd=0)
-    c.create_oval(1, 1, size - 1, size - 1, fill=bg, outline=bg)
-    c.create_text(size / 2, size / 2, text=text, fill=fg, font=F['bold'])
-    return c
+    size = _px(size)
+    k = 4
+    img = Image.new('RGB', (size * k, size * k), parent_bg)
+    ImageDraw.Draw(img).ellipse((0, 0, size * k - 1, size * k - 1), fill=bg)
+    p = _photo(parent, img.resize((size, size), Image.LANCZOS))
+    return tk.Label(parent, image=p, text=text, compound='center', fg=fg, bg=parent_bg, font=F['bold'], bd=0)
+
+
+def icon_tile(parent, text, size=46, parent_bg=CARD):
+    """Скруглённая плашка с иконкой (на карточках задач)."""
+    size = _px(size)
+    p = _photo(parent, round_image(size, size, _px(13), MIST, parent_bg))
+    return tk.Label(parent, image=p, text=text, compound='center', fg=TEAL, bg=parent_bg, font=F['icon'], bd=0)
 
 
 def bullet(parent, text, bg=CARD):
     row = tk.Frame(parent, bg=bg)
-    tk.Label(row, text='◆', fg=AMBER, bg=bg, font=F['small']).pack(side='left', anchor='n', padx=(0, 8))
+    d = _px(7)
+    k = 4
+    img = Image.new('RGB', (d * k, d * k), bg)
+    ImageDraw.Draw(img).ellipse((0, 0, d * k - 1, d * k - 1), fill=AMBER)
+    p = _photo(parent, img.resize((d, d), Image.LANCZOS))
+    tk.Label(row, image=p, bg=bg, bd=0).pack(side='left', padx=(2, 10))
     tk.Label(row, text=text, fg=INK_SOFT, bg=bg, font=F['body'], justify='left', anchor='w').pack(
         side='left', fill='x')
     return row
 
 
 def listbox(parent, **kw):
-    """-> (рамка, список): у Listbox нет внутренних отступов, поэтому он лежит в рамке с полями."""
-    fr = tk.Frame(parent, bg=FIELD, highlightthickness=1, highlightbackground=LINE, highlightcolor=TEAL_2,
-                  padx=8, pady=5)
+    """-> (скруглённая рамка, список)."""
+    fr = ttk.Frame(parent, style='Field.TFrame', padding=(_px(12), _px(8)))
     lb = tk.Listbox(fr, bg=FIELD, fg=INK, selectbackground='#cfe7ec', selectforeground=INK,
                     highlightthickness=0, relief='flat', bd=0, activestyle='none', font=F['body'], **kw)
     lb.pack(fill='both', expand=True)
@@ -135,11 +242,11 @@ def listbox(parent, **kw):
 
 def logo(root, size=28):
     """Иконка программы для шапки (app.png рядом с программой или внутри exe)."""
-    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
-    p = os.path.join(base, 'app.png')
     try:
-        from PIL import Image, ImageTk
-        img = Image.open(p).convert('RGBA').resize((size, size), Image.LANCZOS)
-        return ImageTk.PhotoImage(img, master=root)
+        img = Image.open(os.path.join(_base(), 'app.png')).convert('RGBA').resize((_px(size), _px(size)),
+                                                                                 Image.LANCZOS)
+        bg = Image.new('RGBA', img.size, TEAL)
+        bg.alpha_composite(img)
+        return _photo(root, bg.convert('RGB'))
     except Exception:
         return None

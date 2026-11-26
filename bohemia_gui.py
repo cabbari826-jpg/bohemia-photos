@@ -102,21 +102,21 @@ class FileList(ttk.Frame):
     """Список файлов с кнопками «Добавить…» / «Убрать». label(path) — как показывать строку."""
 
     def __init__(self, master, title, filetypes, label=os.path.basename, extra=None, height=4):
-        super().__init__(master, style='Card.TFrame')
+        super().__init__(master, style='Flat.TFrame')
         self.paths, self.title, self.filetypes, self.label = [], title, filetypes, label
         self.columnconfigure(0, weight=1)
         fr, self.box = ui.listbox(self, height=height, selectmode='extended')
         fr.grid(row=0, column=0, sticky='ew')
-        btns = ttk.Frame(self, style='Card.TFrame')
+        btns = ttk.Frame(self, style='Flat.TFrame')
         btns.grid(row=0, column=1, sticky='n', padx=(8, 0))
-        ttk.Button(btns, text='＋ Добавить…', command=self.add).pack(fill='x')
+        ttk.Button(btns, text='+  Добавить…', command=self.add).pack(fill='x')
         ttk.Button(btns, text='Убрать', command=self.remove).pack(fill='x', pady=4)
         for text, cmd in (extra or []):
             ttk.Button(btns, text=text, command=cmd).pack(fill='x')
         self.on_add = None
         on_drop(self.box, self.add_paths)
         if DND_OK and not self.paths:
-            self.box.insert('end', '  ⇣  перетащите файлы сюда или нажмите «Добавить…»')
+            self.box.insert('end', '↓  перетащите файлы сюда или нажмите «Добавить…»')
             self.box.itemconfigure(0, foreground=ui.MUTED)
             self._hint = True
 
@@ -191,9 +191,9 @@ class DocsScreen(ttk.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.out = tk.StringVar()
-        box = ui.card(self)
+        box = ui.card(self, padding=(22, 12, 22, 14))
         box.pack(fill='x')
-        frm = ttk.Frame(box, style='Card.TFrame', padding=(18, 8, 18, 12))
+        frm = ttk.Frame(box, style='Flat.TFrame')
         frm.pack(fill='x')
         frm.columnconfigure(1, weight=1)
         step(frm, 0, 1, 'Документы поставщика', 'Proforma / Invoice, PDF или Excel')
@@ -273,9 +273,9 @@ class PhotosScreen(ttk.Frame):
         super().__init__(master)
         self.brand = {}
         self.catalogs, self.existing, self.out = tk.StringVar(), tk.StringVar(), tk.StringVar()
-        box = ui.card(self)
+        box = ui.card(self, padding=(22, 12, 22, 14))
         box.pack(fill='x')
-        frm = ttk.Frame(box, style='Card.TFrame', padding=(18, 8, 18, 12))
+        frm = ttk.Frame(box, style='Flat.TFrame')
         frm.pack(fill='x')
         frm.columnconfigure(1, weight=1)
         step(frm, 0, 1, 'Прайс-листы', 'можно несколько брендов')
@@ -395,6 +395,7 @@ def enable_dpi_awareness():
 class App(tk.Tk):
     def __init__(self):
         enable_dpi_awareness()
+        ui.load_fonts()
         super().__init__()
         enable_dnd(self)
         ui.apply(self)
@@ -427,7 +428,7 @@ class App(tk.Tk):
         scale = max(1.0, self.winfo_fpixels('1i') / 96)        # масштаб Windows (1.25, 1.5…)
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         w = min(int(900 * scale), int(sw * 0.9))
-        h = min(int(680 * scale), int(sh * 0.85))               # запас на панель задач
+        h = min(int(780 * scale), int(sh * 0.88))               # запас на панель задач
         self.minsize(min(int(640 * scale), w), min(int(480 * scale), h))
         x, y = max(0, (sw - w) // 2), max(0, (sh - h) // 2 - int(20 * scale))
         self.geometry(f'{w}x{h}+{x}+{y}')
@@ -439,16 +440,16 @@ class App(tk.Tk):
 
     # ---- экраны
     def _build_header(self):
-        h = tk.Frame(self, bg=ui.TEAL, height=56)
+        h = tk.Frame(self, bg=ui.TEAL, height=ui._px(62))
         h.pack(fill='x')
         h.pack_propagate(False)
         self._logo = ui.logo(self, 30)
         if self._logo:
             tk.Label(h, image=self._logo, bg=ui.TEAL).pack(side='left', padx=(18, 10))
-        tk.Label(h, text='Inventa', bg=ui.TEAL, fg='#ffffff', font=ui.F['brand']).pack(side='left')
+        tk.Label(h, text='Inventa', bg=ui.TEAL, fg='#ffffff', font=ui.F['brand']).pack(side='left', pady=(0, 6))
         tk.Label(h, text='by Jooble Soft', bg=ui.TEAL, fg='#9cc3cc', font=ui.F['small']).pack(
-            side='left', padx=(8, 0), pady=(5, 0))
-        self.upd_btn = ttk.Button(h, text='Проверить обновления', style='Ghost.TButton',
+            side='left', padx=(10, 0), pady=(8, 0))
+        self.upd_btn = ttk.Button(h, text='Проверить обновления', style='Ghost.TButton', cursor='hand2',
                                   command=lambda: self.check_updates(True))
         self.upd_btn.pack(side='right', padx=(0, 18))
         tk.Label(h, text=f'версия {updater.current_version()}', bg=ui.TEAL, fg='#9cc3cc',
@@ -476,9 +477,9 @@ class App(tk.Tk):
         row.pack(fill='both', expand=True)
         for col, (key, icon, title, desc, points) in enumerate(self.TASKS):
             row.columnconfigure(col, weight=1, uniform='task')
-            c = ui.card(row, padx=20, pady=18, cursor='hand2')
+            c = ui.card(row, padding=(24, 22, 24, 22), cursor='hand2')
             c.grid(row=0, column=col, sticky='nsew', padx=(0 if col == 0 else 8, 8 if col == 0 else 0))
-            ic = tk.Label(c, text=icon, bg=ui.MIST, fg=ui.TEAL, font=(ui.F['h2'][0], 16), width=3, height=1)
+            ic = ui.icon_tile(c, icon)
             ic.pack(anchor='w')
             tk.Label(c, text=title, bg=ui.CARD, fg=ui.INK, font=ui.F['h3'], anchor='w').pack(
                 anchor='w', pady=(14, 4))
@@ -488,15 +489,17 @@ class App(tk.Tk):
             tk.Frame(c, bg=ui.LINE, height=1).pack(fill='x', pady=12)
             for ptxt in points:
                 ui.bullet(c, ptxt).pack(anchor='w', fill='x', pady=2)
-            ttk.Button(c, text='Открыть  →', style='Accent.TButton',
+            ttk.Button(c, text='Открыть  →', style='AccentCard.TButton', cursor='hand2',
                        command=lambda k=key: self.show(k)).pack(anchor='w', pady=(16, 0))
             # вся карточка кликабельна; при наведении — бирюзовая рамка
             for w in [c] + list(c.winfo_children()):
-                if isinstance(w, tk.Label) or w is c:
+                if isinstance(w, (tk.Label, ttk.Frame)) or w is c:
                     w.bind('<Button-1>', lambda e, k=key: self.show(k))
-            c.bind('<Enter>', lambda e, c=c: c.configure(highlightbackground=ui.TEAL_2))
-            c.bind('<Leave>', lambda e, c=c: c.configure(highlightbackground=ui.LINE))
-            c.bind('<Configure>', lambda e, d=d: d.configure(wraplength=max(200, e.width - 44)))
+            c.bind('<Enter>', lambda e, c=c: c.configure(style='CardHover.TFrame'))
+            c.bind('<Leave>', lambda e, c=c: c.configure(
+                style='CardHover.TFrame' if str(c.winfo_containing(e.x_root, e.y_root) or '').startswith(str(c))
+                else 'Card.TFrame'))
+            c.bind('<Configure>', lambda e, d=d: d.configure(wraplength=max(200, e.width - 60)))
         return f
 
     # ---- обновления
@@ -591,18 +594,19 @@ class App(tk.Tk):
         self.body.pack(fill='x')
         bar = ttk.Frame(f)
         bar.pack(fill='x', pady=(14, 10))
-        self.btn = ttk.Button(bar, text='Запустить', style='Accent.TButton', command=self.start)
+        self.btn = ttk.Button(bar, text='Запустить', style='Accent.TButton', command=self.start, cursor='hand2')
         self.btn.pack(side='left')
-        self.open_btn = ttk.Button(bar, text='Открыть результат', command=self.open_out, state='disabled')
+        self.open_btn = ttk.Button(bar, text='Открыть результат', style='Paper.TButton', command=self.open_out,
+                                   state='disabled')
         self.open_btn.pack(side='left', padx=10)
         self.status = ttk.Label(bar, text='', style='Status.TLabel')
         self.status.pack(side='right')
         self.pb = ttk.Progressbar(f, mode='determinate', maximum=100)
         self.pb.pack(fill='x')
-        lc = ui.card(f)
-        lc.pack(fill='both', expand=True, pady=(10, 0))
+        lc = ttk.Frame(f, style='FieldP.TFrame', padding=(14, 10))
+        lc.pack(fill='both', expand=True, pady=(12, 0))
         self.log = tk.Text(lc, height=8, wrap='word', state='disabled', bg=ui.FIELD, fg=ui.INK_SOFT,
-                           font=ui.F['mono'], relief='flat', bd=0, padx=12, pady=10, highlightthickness=0)
+                           font=ui.F['mono'], relief='flat', bd=0, padx=4, pady=4, highlightthickness=0)
         self.log.pack(fill='both', expand=True)
         self.built = {}
         return f
