@@ -1,5 +1,5 @@
 """Оформление Inventa в стиле сайта: бирюзовая шапка, светлый фон, скруглённые (squircle) карточки,
-поля и кнопки, шрифт Manrope, название — рукописным Courgette.
+поля и кнопки, шрифт Manrope, название — рукописным Grand Hotel.
 
 Скругления рисуются картинками (PIL, со сглаживанием) и подключаются как элементы темы ttk.
 Шрифты лежат в папке fonts (лицензия SIL OFL) и подключаются только для этой программы.
@@ -118,12 +118,12 @@ def apply(root):
     global S
     S = max(1.0, root.winfo_fpixels('1i') / 96)
     sans = _family(root, ['Manrope', 'Segoe UI', 'Inter', 'Arial'])
-    script = _family(root, ['Courgette', 'Segoe Script', 'Brush Script MT'])
+    script = _family(root, ['Grand Hotel', 'Segoe Script', 'Brush Script MT'])
     mono = _family(root, ['Cascadia Mono', 'Consolas', 'JetBrains Mono', 'DejaVu Sans Mono', 'Courier New'])
     F.update(
         body=(sans, 10), small=(sans, 9), bold=(sans, 10, 'bold'),
         h1=(sans, 21, 'bold'), h2=(sans, 16, 'bold'), h3=(sans, 12, 'bold'),
-        brand=(script, 19), eyebrow=(sans, 8, 'bold'), btn=(sans, 10, 'bold'),
+        brand=(script, 22), eyebrow=(sans, 8, 'bold'), btn=(sans, 10, 'bold'),
         big=(sans, 11, 'bold'), mono=(mono, 9), icon=(sans, 16),
     )
     for name in ('TkDefaultFont', 'TkTextFont', 'TkMenuFont'):
