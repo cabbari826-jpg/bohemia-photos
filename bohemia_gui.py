@@ -55,6 +55,31 @@ def enable_dnd(root):
         DND_OK = False
 
 
+def _settings_path():
+    return os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'), 'Inventa', 'settings.json')
+
+
+def load_settings():
+    import json
+    try:
+        with open(_settings_path(), encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(**kw):
+    import json
+    d = load_settings()
+    d.update(kw)
+    try:
+        os.makedirs(os.path.dirname(_settings_path()), exist_ok=True)
+        with open(_settings_path(), 'w', encoding='utf-8') as f:
+            json.dump(d, f)
+    except OSError:
+        pass
+
+
 def drop_weight(paths):
     """Сколько весят перетащенные файлы (папка — сумма файлов в ней, без вложенных)."""
     total = 0
@@ -250,10 +275,13 @@ class DocsScreen(ttk.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.out = tk.StringVar()
-        box = ui.card(self, padding=(26, 16, 26, 18))
+        box = ui.card(self, padding=(26, 16, 26, 4))
         box.pack(fill='x')
         frm = ttk.Frame(box, style='Flat.TFrame')
         frm.pack(fill='x')
+        # запас внизу карточки: когда поле «проседает» от упавшего файла, запас уменьшается на столько же,
+        # и карточка не меняет размер — двигаются только соседние строки внутри неё (быстро, без мигания)
+        self.after_idle(lambda: motion.attach_spacer(frm, box))
         frm.columnconfigure(1, weight=1)
         step(frm, 0, 1, 'Документы поставщика', 'Proforma / Invoice, PDF или Excel')
         self.docs = FileList(frm, 'Proforma / Invoice',
@@ -333,10 +361,13 @@ class PhotosScreen(ttk.Frame):
         super().__init__(master)
         self.brand = {}
         self.catalogs, self.existing, self.out = tk.StringVar(), tk.StringVar(), tk.StringVar()
-        box = ui.card(self, padding=(26, 16, 26, 18))
+        box = ui.card(self, padding=(26, 16, 26, 4))
         box.pack(fill='x')
         frm = ttk.Frame(box, style='Flat.TFrame')
         frm.pack(fill='x')
+        # запас внизу карточки: когда поле «проседает» от упавшего файла, запас уменьшается на столько же,
+        # и карточка не меняет размер — двигаются только соседние строки внутри неё (быстро, без мигания)
+        self.after_idle(lambda: motion.attach_spacer(frm, box))
         frm.columnconfigure(1, weight=1)
         step(frm, 0, 1, 'Прайс-листы', 'можно несколько брендов')
         self.prices = FileList(frm, 'Прайс-листы', PRICE_TYPES, label=self._label,
@@ -458,6 +489,7 @@ class App(tk.Tk):
         ui.load_fonts()
         super().__init__()
         enable_dnd(self)
+        motion.set_enabled(load_settings().get('animation', True))
         ui.apply(self)
         self.title(APP_TITLE)
         try:   # иконка окна (в exe файл вшит рядом с программой)
@@ -512,10 +544,22 @@ class App(tk.Tk):
         self.upd_btn = MotionButton(h, text='Проверить обновления', kind='ghost', width=176, height=34, bg=ui.TEAL,
                                     command=lambda: self.check_updates(True))
         self.upd_btn.pack(side='right', padx=(0, 18))
+        self.anim_btn = MotionButton(h, text=self._anim_text(), kind='ghost', width=150, height=34, bg=ui.TEAL,
+                                     command=self.toggle_animation)
+        self.anim_btn.pack(side='right', padx=(0, 8))
         tk.Label(h, text=f'версия {updater.current_version()}', bg=ui.TEAL, fg='#9cc3cc',
                  font=ui.F['small']).pack(side='right', padx=(0, 12))
         self.upd_label = tk.Label(h, text='', bg=ui.TEAL, fg=ui.AMBER, font=ui.F['small'])
         self.upd_label.pack(side='right', padx=(0, 12))
+
+    @staticmethod
+    def _anim_text():
+        return 'Анимация: вкл' if motion.ENABLED else 'Анимация: выкл'
+
+    def toggle_animation(self):
+        motion.set_enabled(not motion.ENABLED)
+        save_settings(animation=motion.ENABLED)
+        self.anim_btn.configure(text=self._anim_text())
 
     TASKS = [
         ('docs', '📄', 'Proforma / Invoice → Excel',
