@@ -82,7 +82,7 @@ class FileList(ttk.Frame):
 class DocsScreen(ttk.Frame):
     """Proforma / Invoice -> Excel."""
     action = 'Сделать Excel'
-    heading = 'Proforma / Invoice → Excel'
+    heading = 'Proforma / Invoice → Excel, сверка с заказом'
 
     def __init__(self, master):
         super().__init__(master)
@@ -90,18 +90,29 @@ class DocsScreen(ttk.Frame):
         frm = ttk.Frame(self)
         frm.pack(fill='x')
         frm.columnconfigure(1, weight=1)
-        ttk.Label(frm, text='1. Документы (PDF или Excel):').grid(row=0, column=0, sticky='nw', pady=4)
+        ttk.Label(frm, text='1. Документы поставщика\n(Proforma / Invoice, PDF или Excel):').grid(
+            row=0, column=0, sticky='nw', pady=4)
         self.docs = FileList(frm, 'Proforma / Invoice',
-                             [('PDF и Excel', '*.pdf *.PDF *.xlsx *.xls *.csv'), ('Все файлы', '*.*')])
+                             [('PDF и Excel', '*.pdf *.PDF *.xlsx *.xls *.csv'), ('Все файлы', '*.*')], height=3)
         self.docs.grid(row=0, column=1, columnspan=2, sticky='ew', padx=6)
         self.docs.on_add = self._suggest_out
-        ttk.Label(frm, text='2. Прайсы для сверки\n(необязательно, можно несколько):').grid(
+        ttk.Label(frm, text='2. Наши заказы поставщику\n(Excel, необязательно):').grid(
             row=1, column=0, sticky='nw', pady=4)
+        self.orders = FileList(frm, 'Заказы поставщику', [('Excel', '*.xlsx *.xls *.csv'), ('Все файлы', '*.*')],
+                               height=3)
+        self.orders.grid(row=1, column=1, columnspan=2, sticky='ew', padx=6, pady=4)
+        self.orders.on_add = self._suggest_out
+        ttk.Label(frm, text='3. Прайсы для сверки\n(необязательно, можно несколько):').grid(
+            row=2, column=0, sticky='nw', pady=4)
         self.prices = FileList(frm, 'Прайс-листы', PRICE_TYPES, height=3)
-        self.prices.grid(row=1, column=1, columnspan=2, sticky='ew', padx=6, pady=4)
-        ttk.Label(frm, text='3. Куда сохранить Excel:').grid(row=2, column=0, sticky='w', pady=4)
-        ttk.Entry(frm, textvariable=self.out).grid(row=2, column=1, sticky='ew', padx=6)
-        ttk.Button(frm, text='Обзор…', command=self.pick_out).grid(row=2, column=2, sticky='ew')
+        self.prices.grid(row=2, column=1, columnspan=2, sticky='ew', padx=6, pady=4)
+        ttk.Label(frm, text='4. Куда сохранить Excel:').grid(row=3, column=0, sticky='w', pady=4)
+        ttk.Entry(frm, textvariable=self.out).grid(row=3, column=1, sticky='ew', padx=6)
+        ttk.Button(frm, text='Обзор…', command=self.pick_out).grid(row=3, column=2, sticky='ew')
+        ttk.Label(frm, foreground='#666',
+                  text='Если добавить и документы, и заказы — в отчёте будет лист «Сверка с заказом»: '
+                       'чего нет, что лишнее, где другое кол-во или цена.', wraplength=760, justify='left').grid(
+            row=4, column=0, columnspan=3, sticky='w', pady=(2, 0))
 
     def _suggest_out(self, ps):
         if not self.out.get():
@@ -118,8 +129,10 @@ class DocsScreen(ttk.Frame):
 
     def job(self):
         files, prices, out = list(self.docs.paths), list(self.prices.paths), self.out.get().strip()
-        if not files:
-            messagebox.showwarning(APP_TITLE, 'Нажмите «Добавить…» и выберите PDF или Excel файлы Proforma / Invoice.')
+        orders = list(self.orders.paths)
+        if not files and not orders:
+            messagebox.showwarning(APP_TITLE, 'Добавьте документы поставщика (Proforma / Invoice) '
+                                              'и/или наши заказы — кнопки «Добавить…».')
             return None
         if not out:
             messagebox.showwarning(APP_TITLE, 'Укажите, куда сохранить Excel.')
@@ -129,8 +142,13 @@ class DocsScreen(ttk.Frame):
             self.out.set(out)
 
         def work(log, progress):
-            r = invoice_reader.run(files, out, prices or None, log=log, progress=progress)
+            r = invoice_reader.run(files, out, prices or None, log=log, progress=progress, order_paths=orders or None)
             msg = f'Готово. Документов: {r["docs"]}, позиций: {r["items"]}\n'
+            if r['orders']:
+                msg += f'Позиций в заказах: {r["orders"]}\n'
+            if r['order_stats']:
+                msg += '\nСверка заказа с документами:\n' + '\n'.join(
+                    f'  {k}: {v}' for k, v in r['order_stats'].most_common()) + '\n'
             if r['bad_lines']:
                 msg += f'Строк, где кол-во × цена ≠ сумма: {r["bad_lines"]}\n'
             if r['stats']:
@@ -320,8 +338,8 @@ class App(tk.Tk):
         ttk.Button(f, text='📄  Proforma / Invoice  →  Excel', style='Big.TButton',
                    command=lambda: self.show('docs')).pack(fill='x', padx=60)
         ttk.Label(f, foreground='#555', justify='center',
-                  text='Выписать позиции из PDF (или Excel) документов в Excel-отчёт\n'
-                       'и, если нужно, сверить коды и цены с прайс-листами').pack(pady=(6, 26))
+                  text='Выписать позиции из PDF (или Excel) документов в Excel-отчёт,\n'
+                       'сверить их с нашим заказом поставщику и с прайс-листами').pack(pady=(6, 26))
         ttk.Button(f, text='🖼  Фото из каталогов', style='Big.TButton',
                    command=lambda: self.show('photos')).pack(fill='x', padx=60)
         ttk.Label(f, foreground='#555', justify='center',
